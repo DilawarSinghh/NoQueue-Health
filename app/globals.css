@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Scriba design tokens — "clean, minimalist, glassy".
+ * Single soft-teal accent (#4FB3BF ≈ 186 47% 53%).
+ * No harsh reds: "destructive" is mapped to amber/orange for validation
+ * warnings only, per spec §5.
+ */
+@layer base {
+  :root {
+    --background: 195 40% 97%;
+    --foreground: 200 30% 16%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 200 30% 16%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 30% 16%;
+
+    --primary: 186 47% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 190 35% 92%;
+    --secondary-foreground: 200 30% 22%;
+
+    --muted: 190 30% 93%;
+    --muted-foreground: 200 15% 42%;
+
+    --accent: 186 45% 91%;
+    --accent-foreground: 200 30% 22%;
+
+    /* Amber/orange — validation warnings only, never alarm styling */
+    --destructive: 33 90% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 190 30% 86%;
+    --input: 190 30% 86%;
+    --ring: 186 47% 53%;
+
+    --radius: 1rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
