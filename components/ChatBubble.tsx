@@ -1,15 +1,36 @@
 "use client";
 
-// ChatBubble — chat message bubble (Step 3)
-//
-// TODO(Step 3):
-// - Props: role ("ai" | "user"), children/content, optional isTyping state.
-// - AI bubbles aligned left (white glass surface), user bubbles aligned
-//   right (soft teal accent background).
-// - Wrap entrance animation in Framer Motion: subtle fade/slide, 150–250ms.
-export function ChatBubble(_props: {
+import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
+
+// ChatBubble — AI messages left (frosted white), user messages right (teal).
+// Subtle 200ms fade/slide entrance per spec §5.
+export function ChatBubble({
+  role,
+  children,
+}: {
   role: "ai" | "user";
   children?: React.ReactNode;
 }) {
-  return null; // scaffold — implemented in Step 3
+  const isUser = role === "user";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      className={cn("flex w-full", isUser ? "justify-end" : "justify-start")}
+    >
+      <div
+        className={cn(
+          "max-w-[85%] rounded-2xl px-4 py-3 text-base leading-relaxed shadow-sm",
+          isUser
+            ? "rounded-br-md bg-primary text-primary-foreground"
+            : "rounded-bl-md border border-white/50 bg-white/85 text-foreground backdrop-blur-sm"
+        )}
+      >
+        {children}
+      </div>
+    </motion.div>
+  );
 }
+

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, ClipboardList } from "lucide-react";
@@ -9,11 +8,14 @@ import { ConsentNotice } from "@/components/ConsentNotice";
 import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { CLINIC_NAME } from "@/lib/clinic";
+import { useIntakeStore } from "@/lib/store";
 
 // Landing screen (spec §4): clinic name, consent flow, consent-gated Start.
 export default function LandingPage() {
   const router = useRouter();
-  const [consented, setConsented] = useState(false);
+  // Consent lives in the store so /intake can verify it (spec §6)
+  const consented = useIntakeStore((s) => s.consented);
+  const setConsented = useIntakeStore((s) => s.setConsented);
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
