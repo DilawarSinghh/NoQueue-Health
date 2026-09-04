@@ -106,8 +106,11 @@ export default function IntakePage() {
       const result = await callChatApi(newConversation, data);
       const updatedData = result.updatedData ?? data;
       setData(updatedData);
-      // Spec Step 3: console-log the structured data as it fills up
-      console.log("[Scriba] structured data:", updatedData);
+      // Spec Step 3: console-log the structured data as it fills up —
+      // dev/testing only; patient data must never be logged in production.
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[Scriba] structured data:", updatedData);
+      }
 
       if (result.nextQuestion) {
         setConversation([
@@ -119,7 +122,9 @@ export default function IntakePage() {
       }
 
       if (result.isComplete) {
-        console.log("[Scriba] intake complete:", updatedData);
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[Scriba] intake complete:", updatedData);
+        }
         setTimeout(() => router.push("/review"), 500);
       }
     } catch {
