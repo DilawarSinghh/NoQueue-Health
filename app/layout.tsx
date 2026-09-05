@@ -5,9 +5,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Scriba — Fast, friendly hospital intake",
+  title: "Scriba — Hospital documentation, made simple",
   description:
-    "Replace slow hospital paperwork with an AI-guided conversational intake, ending in a doctor-ready PDF.",
+    "A two-sided marketplace connecting hospital documentation agents with patients, plus an AI-powered self-serve intake flow.",
 };
 
 export const viewport: Viewport = {
