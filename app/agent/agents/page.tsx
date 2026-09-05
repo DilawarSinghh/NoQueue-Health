@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -357,11 +357,11 @@ function RequestCard({ req }: { req: PatientRequest }) {
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// ─── Page (inner — needs useSearchParams, must be inside Suspense) ────────────
 
 type Tab = "posts" | "requests";
 
-export default function AgentAgentsPage() {
+function AgentAgentsInner() {
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get("tab") === "requests" ? "requests" : "posts") as Tab;
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -546,5 +546,13 @@ export default function AgentAgentsPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function AgentAgentsPage() {
+  return (
+    <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading…</p>}>
+      <AgentAgentsInner />
+    </Suspense>
   );
 }

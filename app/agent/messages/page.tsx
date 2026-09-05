@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, User } from "lucide-react";
@@ -22,7 +22,7 @@ interface ThreadSummary {
   lastAt: string | null;
 }
 
-export default function AgentMessagesPage() {
+function AgentMessagesInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const threadParam  = searchParams.get("thread");
@@ -214,5 +214,13 @@ export default function AgentMessagesPage() {
         </GlassCard>
       </div>
     </div>
+  );
+}
+
+export default function AgentMessagesPage() {
+  return (
+    <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading…</p>}>
+      <AgentMessagesInner />
+    </Suspense>
   );
 }
