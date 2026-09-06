@@ -1,92 +1,99 @@
 import { z } from "zod";
 
-// Patient intake schema — spec §3. Single source of truth used to:
-// (a) instruct the AI what to collect, (b) validate AI-extracted JSON
-// server-side before it's shown to the user, (c) validate the review
-// screen's edited output before PDF generation.
-export const patientIntakeSchema = z.object({
-  patientName: z.string().min(1),
-  age: z.number().int().positive(),
-  gender: z.string().min(1),
-  contactNumber: z.string().min(10),
-  address: z.string().optional(),
-  doctorOrDepartment: z.string().min(1),
-  chiefComplaint: z.string().min(1),
-  knownAllergies: z.string().default("None reported"),
-  currentMedications: z.string().optional(),
-  pastMedicalHistory: z.string().optional(),
-  insuranceProvider: z.string().optional(),
-  insuranceId: z.string().optional(),
-  emergencyContactName: z.string().optional(),
-  emergencyContactNumber: z.string().optional(),
+// ─── Spec §7 adaptive intake schema ──────────────────────────────────────────
+// Single source of truth used by:
+//   (a) the AI system prompt — tells the model what to collect
+//   (b) server-side Zod validation of every AI response
+//   (c) the review screen — editable fields before PDF generation
+//   (d) the PDF template
+
+export const intakeDataSchema = z.object({
+  chiefComplaint:      z.string().min(1),
+  symptomOnset:        z.string().min(1),
+  symptomDuration:     z.string().min(1),
+  symptomSeverity:     z.string().min(1), // patient's own words, never clinical
+  associatedSymptoms:  z.string().default("None reported"),
+  priorEpisodes:       z.string().default("None reported"),
+  medicationsTried:    z.string().default("None reported"),
+  doctorOrDepartment:  z.string().min(1),
 });
 
-export type PatientIntake = z.output<typeof patientIntakeSchema>;
-export type PatientIntakeInput = z.input<typeof patientIntakeSchema>;
-/** Partially-collected data as it flows through intake (client + API). */
-export type PatientIntakePartial = Partial<PatientIntakeInput>;
+export type IntakeData        = z.output<typeof intakeDataSchema>;
+export type IntakeDataPartial = Partial<z.input<typeof intakeDataSchema>>;
 
-/** Canonical question order the AI must follow. */
-export const FIELD_ORDER = [
-  "patientName",
-  "age",
-  "gender",
-  "contactNumber",
-  "address",
-  "doctorOrDepartment",
+/** Fields collected in this order — drives AI question sequencing. */
+export const INTAKE_FIELD_ORDER = [
   "chiefComplaint",
-  "knownAllergies",
-  "currentMedications",
-  "pastMedicalHistory",
-  "insuranceProvider",
-  "insuranceId",
-  "emergencyContactName",
-  "emergencyContactNumber",
+  "symptomOnset",
+  "symptomDuration",
+  "symptomSeverity",
+  "associatedSymptoms",
+  "priorEpisodes",
+  "medicationsTried",
+  "doctorOrDepartment",
 ] as const;
 
-export type IntakeField = (typeof FIELD_ORDER)[number];
+export type IntakeField = (typeof INTAKE_FIELD_ORDER)[number];
 
-/** Fields that must be present before the intake is complete. */
-export const REQUIRED_FIELDS: readonly IntakeField[] = [
-  "patientName",
-  "age",
-  "gender",
-  "contactNumber",
-  "doctorOrDepartment",
+/** Required before the report can be generated. */
+export const REQUIRED_INTAKE_FIELDS: readonly IntakeField[] = [
   "chiefComplaint",
+  "symptomOnset",
+  "symptomDuration",
+  "symptomSeverity",
+  "doctorOrDepartment",
 ];
 
-/** Human-readable labels (used by progress UI and the review screen). */
-export const FIELD_LABELS: Record<IntakeField, string> = {
-  patientName: "Patient name",
-  age: "Age",
-  gender: "Gender",
-  contactNumber: "Contact number",
-  address: "Address",
+/** Human-readable labels used on the review screen and PDF. */
+export const INTAKE_FIELD_LABELS: Record<IntakeField, string> = {
+  chiefComplaint:     "Chief complaint",
+  symptomOnset:       "When symptoms started",
+  symptomDuration:    "How long symptoms have lasted",
+  symptomSeverity:    "Severity (patient's own words)",
+  associatedSymptoms: "Associated symptoms",
+  priorEpisodes:      "Prior episodes",
+  medicationsTried:   "Medications tried",
   doctorOrDepartment: "Doctor / department",
-  chiefComplaint: "Chief complaint (reason for visit)",
-  knownAllergies: "Known allergies",
-  currentMedications: "Current medications",
-  pastMedicalHistory: "Past medical history",
-  insuranceProvider: "Insurance provider",
-  insuranceId: "Insurance ID",
-  emergencyContactName: "Emergency contact name",
-  emergencyContactNumber: "Emergency contact number",
 };
 
-export const TOTAL_FIELDS = FIELD_ORDER.length;
+// ─── AI response shape ────────────────────────────────────────────────────────
+// The Groq route returns one of these two shapes:
 
-function hasValue(value: unknown): boolean {
-  return value !== undefined && String(value).trim() !== "";
+export const emergencyResponseSchema = z.object({
+  emergency: z.literal(true),
+  message:   z.string(),
+});
+
+export const normalResponseSchema = z.object({
+  emergency:     z.literal(false),
+  updatedData:   intakeDataSchema.partial(),
+  nextQuestion:  z.string().nullable(),
+  isComplete:    z.boolean(),
+});
+
+export type AIResponse =
+  | z.output<typeof emergencyResponseSchema>
+  | z.output<typeof normalResponseSchema>;
+
+// ─── Patient context passed into every AI request ────────────────────────────
+export interface PatientContext {
+  name:              string;
+  age:               number | null;
+  gender:            string | null;
+  allergies:         string | null;
+  chronicConditions: string | null;
 }
 
-/** Progress indicator count — non-empty schema keys. */
-export function countCollectedFields(data: PatientIntakePartial): number {
-  return FIELD_ORDER.filter((key) => hasValue(data[key])).length;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function hasValue(v: unknown): boolean {
+  return v !== undefined && v !== null && String(v).trim() !== "";
 }
 
-/** True only when every required field has a non-empty value. */
-export function isDataComplete(data: PatientIntakePartial): boolean {
-  return REQUIRED_FIELDS.every((key) => hasValue(data[key]));
+export function countCollectedFields(data: IntakeDataPartial): number {
+  return INTAKE_FIELD_ORDER.filter((k) => hasValue(data[k])).length;
 }
 
+export function isIntakeComplete(data: IntakeDataPartial): boolean {
+  return REQUIRED_INTAKE_FIELDS.every((k) => hasValue(data[k]));
+}

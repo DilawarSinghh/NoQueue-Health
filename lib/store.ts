@@ -1,40 +1,72 @@
 import { create } from "zustand";
-import type { PatientIntakePartial } from "@/lib/schema";
-import type { ChatMessage } from "@/types/patient";
+import type { IntakeDataPartial, PatientContext } from "@/lib/schema";
 
-// Client-side state for the whole flow. Patient data lives ONLY here until
-// the user explicitly confirms on the review screen (spec §6) — never in
-// URL params, never persisted to localStorage in this MVP.
+// Client-side state for the AI intake flow.
+// Data lives ONLY here until the patient explicitly confirms on the review
+// screen — never in URL params, never in localStorage in v1.
+
+export interface ChatMessage {
+  role:    "user" | "assistant";
+  content: string;
+}
 
 interface IntakeStore {
-  /** Consent gate (§6) — intake refuses to run without it. */
+  /** Consent gate — intake refuses to run without this. */
   consented: boolean;
-  setConsented: (consented: boolean) => void;
+  setConsented: (v: boolean) => void;
 
-  /** Structured data collected so far. */
-  data: PatientIntakePartial;
-  setData: (data: PatientIntakePartial) => void;
+  /** Pre-filled patient context pulled from profiles + patient_profiles. */
+  patientContext: PatientContext | null;
+  setPatientContext: (ctx: PatientContext) => void;
 
-  /** Chat transcript. */
+  /** Structured data collected so far (partial until complete). */
+  data: IntakeDataPartial;
+  setData: (data: IntakeDataPartial) => void;
+
+  /** Full conversation transcript. */
   conversation: ChatMessage[];
-  setConversation: (conversation: ChatMessage[]) => void;
+  addMessage: (msg: ChatMessage) => void;
+  setConversation: (msgs: ChatMessage[]) => void;
 
-  /** Signed PDF URL, set after successful generation in Step 5. */
+  /** AI-generated clinical summary (set on the review screen). */
+  clinicalSummary: string;
+  setClinicalSummary: (s: string) => void;
+
+  /** Signed PDF URL after successful generation. */
   pdfUrl: string | null;
-  setPdfUrl: (pdfUrl: string | null) => void;
+  setPdfUrl: (url: string | null) => void;
 
-  /** Clear everything ("Start another"). */
+  /** Reset everything for a new intake session. */
   reset: () => void;
 }
 
 export const useIntakeStore = create<IntakeStore>((set) => ({
-  consented: false,
-  setConsented: (consented) => set({ consented }),
-  data: {},
-  setData: (data) => set({ data }),
-  conversation: [],
-  setConversation: (conversation) => set({ conversation }),
-  pdfUrl: null,
-  setPdfUrl: (pdfUrl) => set({ pdfUrl }),
-  reset: () => set({ consented: false, data: {}, conversation: [], pdfUrl: null }),
+  consented:          false,
+  setConsented:       (v)    => set({ consented: v }),
+
+  patientContext:     null,
+  setPatientContext:  (ctx)  => set({ patientContext: ctx }),
+
+  data:               {},
+  setData:            (data) => set({ data }),
+
+  conversation:       [],
+  addMessage:         (msg)  => set((s) => ({ conversation: [...s.conversation, msg] })),
+  setConversation:    (msgs) => set({ conversation: msgs }),
+
+  clinicalSummary:    "",
+  setClinicalSummary: (s)    => set({ clinicalSummary: s }),
+
+  pdfUrl:             null,
+  setPdfUrl:          (url)  => set({ pdfUrl: url }),
+
+  reset: () =>
+    set({
+      consented:       false,
+      patientContext:  null,
+      data:            {},
+      conversation:    [],
+      clinicalSummary: "",
+      pdfUrl:          null,
+    }),
 }));

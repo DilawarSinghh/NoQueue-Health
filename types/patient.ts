@@ -1,16 +1,11 @@
-import { z } from "zod";
-import { patientIntakeSchema } from "@/lib/schema";
+// types/patient.ts — re-exports from lib/schema for backwards compatibility.
+// The canonical types now live in lib/schema.ts.
+export type { IntakeData, IntakeDataPartial, PatientContext } from "@/lib/schema";
 
-// Types generated from / matching lib/schema.ts — UI code never hand-writes
-// patient shapes.
-export type PatientIntake = z.output<typeof patientIntakeSchema>;
-export type PatientIntakeInput = z.input<typeof patientIntakeSchema>;
-
-/** Conversation turn exchanged with /api/chat. */
+/** Conversation turn used by the AI intake chat UI. */
 export type ChatRole = "user" | "assistant";
 
 export interface ChatMessage {
-  role: ChatRole;
+  role:    ChatRole;
   content: string;
 }
-
