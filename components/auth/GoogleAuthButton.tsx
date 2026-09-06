@@ -25,10 +25,19 @@ export function GoogleAuthButton({
     setLoading(true);
     setError(null);
     const supabase = createClient();
+
+    // Must point to the full /auth/callback path — Supabase uses this as the
+    // post-OAuth redirect target. Using window.location.origin alone causes
+    // the code to land on / instead of the route handler.
+    const redirectTo =
+      process.env.NEXT_PUBLIC_SITE_URL
+        ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
+        : `${window.location.origin}/auth/callback`;
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo,
       },
     });
     if (error) {
