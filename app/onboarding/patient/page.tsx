@@ -27,17 +27,23 @@ export default function PatientOnboardingPage() {
   const [chronicConditions, setChronicConditions] = useState("");
 
   useEffect(() => {
-    createClient()
-      .auth.getUser()
-      .then(({ data: { user } }) => {
-        if (user) {
-          const meta = user.user_metadata as Record<string, unknown>;
-          setFullName(typeof meta.full_name === "string" ? meta.full_name : "");
-          setPhone(typeof meta.phone === "string" ? meta.phone : "");
-        }
-        setLoading(false);
-      });
-  }, []);
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setLoading(false); return; }
+      // Redirect already-onboarded users away from this form
+      const { data: existing } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (existing?.role === "patient") { router.replace("/patient/dashboard"); return; }
+      if (existing?.role === "agent")   { router.replace("/agent/dashboard");   return; }
+      const meta = user.user_metadata as Record<string, unknown>;
+      setFullName(typeof meta.full_name === "string" ? meta.full_name : "");
+      setPhone(typeof meta.phone === "string" ? meta.phone : "");
+      setLoading(false);
+    });
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

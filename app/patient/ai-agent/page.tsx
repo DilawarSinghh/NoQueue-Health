@@ -187,7 +187,7 @@ function VoicePanel({
           <button
             onClick={onStopSpeaking}
             aria-label="Stop AI speaking"
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200"
           >
             <VolumeX className="h-4 w-4" />
           </button>
@@ -388,6 +388,7 @@ export default function AIAgentPage() {
         }),
       });
       const json = await res.json();
+      if (!res.ok) { setApiError(json?.error ?? "AI service unavailable. Please try again."); setAiLoading(false); return; }
       if (json.nextQuestion) {
         addMessage({ role: "user",      content: "Hello, I'd like to start my intake." });
         addMessage({ role: "assistant", content: json.nextQuestion });
@@ -501,7 +502,7 @@ export default function AIAgentPage() {
       {emergency && <EmergencyBanner message={emergency} />}
 
       {/* Chat window */}
-      <GlassCard className="flex flex-col overflow-hidden p-0" style={{ height: "58dvh" }}>
+      <GlassCard className="flex flex-col overflow-hidden p-0 min-h-[300px] h-[58dvh] max-h-[520px]">
         <div className="flex-1 overflow-y-auto space-y-3 p-4">
           {conversation.map((msg, i) => (
             <motion.div

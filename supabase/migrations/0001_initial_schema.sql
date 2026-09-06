@@ -296,3 +296,29 @@ insert into storage.buckets (id, name, public)
 insert into storage.buckets (id, name, public)
   values ('patient-pdfs', 'patient-pdfs', false)
   on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- 7. RLS Verification Queries (spec §8 — run manually to confirm cross-user
+--    access is blocked). Replace UUIDs with real test user IDs from auth.users.
+-- ---------------------------------------------------------------------------
+-- Test 1: profile isolation — should return 0 rows when run as user B
+--   select * from profiles where id = '<user_A_id>';
+--
+-- Test 2: thread isolation — should return 0 rows when run as user C (not a participant)
+--   select * from threads where id = '<thread_between_A_and_B>';
+--
+-- Test 3: messages isolation — should return 0 rows when run as user C
+--   select * from messages where thread_id = '<thread_between_A_and_B>';
+--
+-- Test 4: intake_records isolation — should return 0 rows when run as any user other than the patient
+--   select * from intake_records where patient_id = '<patient_A_id>';
+--
+-- Test 5: agent_profiles whatsapp isolation — should return 0 rows when run as any other user
+--   select whatsapp_number from agent_profiles where user_id = '<agent_A_id>';
+--
+-- Test 6: notifications isolation — should return 0 rows for any other user
+--   select * from notifications where user_id = '<user_A_id>';
+--
+-- All of the above should be run with the anon/authenticated role (not service_role).
+-- In Supabase SQL Editor: use "Role: authenticated" in the run dropdown and set
+-- auth.uid() by running: select set_config('request.jwt.claims', '{"sub":"<user_C_id>"}', true);

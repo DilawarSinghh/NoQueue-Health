@@ -166,7 +166,7 @@ export default function AgentRequestsPage() {
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
+      if (!user) { setLoading(false); setError("Session expired — please sign in again."); return; }
 
       const { data, error: err } = await supabase
         .from("bookings")

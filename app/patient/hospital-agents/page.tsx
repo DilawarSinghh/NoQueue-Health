@@ -122,7 +122,7 @@ function PostRequestModal({ onClose, onPosted }: { onClose: () => void; onPosted
           </div>
 
           <form onSubmit={handleSubmit} className="grid gap-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="req-dept">Department</Label>
                 <Input
@@ -511,7 +511,7 @@ function HospitalAgentsInner() {
     requestsLoaded.current = true;
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
+      if (!user) { setReqLoading(false); return; }
       const { data } = await supabase
         .from("patient_requests")
         .select("*")
