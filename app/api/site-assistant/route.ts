@@ -39,7 +39,7 @@ const requestSchema = z.object({
 // ─── Route handler ────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
   // Auth — user must be signed in
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -165,7 +165,7 @@ export async function POST(request: Request) {
 
 // ── GET — load thread history for a returning user ───────────────────────────
 export async function GET(request: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ messages: [], threadId: null });
 

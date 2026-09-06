@@ -1,10 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-// Server client (anon key + the user's session cookie). Used in Server
-// Components and Route Handlers. RLS still applies — this is NOT the admin.
-export function createClient() {
-  const cookieStore = cookies();
+// Server client (anon key + the user's session cookie).
+// Used in Server Components and Route Handlers. RLS still applies.
+// NOTE: cookies() must be awaited in @supabase/ssr v0.5+
+export async function createClient() {
+  const cookieStore = await cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,8 +21,8 @@ export function createClient() {
               cookieStore.set(name, value, options)
             );
           } catch {
-            // Called from a Server Component — safe to ignore; middleware
-            // refreshes the session.
+            // Called from a Server Component — safe to ignore;
+            // middleware refreshes the session.
           }
         },
       },

@@ -13,7 +13,7 @@ import { getSupabaseAdmin } from "@/lib/supabase";
  * own rows — we need to check both orderings without two round-trips).
  */
 export async function POST(request: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

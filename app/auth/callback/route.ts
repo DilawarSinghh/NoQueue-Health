@@ -1,18 +1,38 @@
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 
-// OAuth redirect target. Exchanges the code for a session, then routes the
-// user based on whether a profile already exists:
-//   - no profile  -> /onboarding/role (first-time signup)
-//   - agent       -> /agent/dashboard
-//   - patient     -> /patient/dashboard
+// OAuth callback — exchanges the PKCE code for a session, then routes:
+//   new user  → /onboarding/role
+//   agent     → /agent/dashboard
+//   patient   → /patient/dashboard
+//   any error → /auth/error  (never dead-ends on a raw Vercel 404)
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
 
   if (code) {
-    const supabase = createClient();
+    // @supabase/ssr v0.5+ requires cookies() to be awaited
+    const cookieStore = await cookies();
+
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          },
+        },
+      }
+    );
+
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
@@ -21,7 +41,7 @@ export async function GET(request: Request) {
       } = await supabase.auth.getUser();
 
       if (user) {
-        // Server-side check (service role) — reliable regardless of RLS.
+        // Use service role for the profile check — bypasses RLS reliably
         const admin = getSupabaseAdmin();
         const { data: profile } = await admin
           .from("profiles")
@@ -40,6 +60,6 @@ export async function GET(request: Request) {
     }
   }
 
-  // Fallback on any error — back to the landing page.
-  return NextResponse.redirect(`${origin}/`);
+  // Any failure → friendly error page, never a raw Vercel 404
+  return NextResponse.redirect(`${origin}/auth/error`);
 }
