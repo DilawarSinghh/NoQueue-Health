@@ -141,7 +141,7 @@ function CreatePostForm({
                     rows={3}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="grid gap-2">
                     <Label htmlFor="price">Price (₹)</Label>
                     <Input
