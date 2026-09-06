@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Bot,
+  CalendarCheck,
   LayoutDashboard,
   LogOut,
   MessageSquare,
@@ -15,10 +16,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const NAV_ITEMS = [
   { href: "/patient/dashboard",       label: "Dashboard",      icon: LayoutDashboard },
-  { href: "/patient/hospital-agents", label: "Hospital Agents", icon: Stethoscope    },
+  { href: "/patient/hospital-agents", label: "Agents",          icon: Stethoscope    },
+  { href: "/patient/bookings",        label: "Bookings",        icon: CalendarCheck  },
   { href: "/patient/ai-agent",        label: "AI Agent",        icon: Bot            },
   { href: "/patient/messages",        label: "Messages",        icon: MessageSquare  },
 ];
@@ -75,7 +78,9 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
           </nav>
 
           {/* Profile dropdown (desktop) */}
-          <div className="relative hidden md:block">
+          <div className="relative hidden md:flex md:items-center md:gap-1">
+            <NotificationBell role="patient" />
+            <div className="relative">
             <button
               onClick={() => setMenuOpen((o) => !o)}
               className="flex items-center gap-2 rounded-xl p-2 text-sm transition-colors hover:bg-white/70"
@@ -118,6 +123,7 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
                 </motion.div>
               )}
             </AnimatePresence>
+          </div>
           </div>
 
           {/* Mobile: profile + sign-out */}

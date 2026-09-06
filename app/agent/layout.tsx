@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const NAV_ITEMS = [
   { href: "/agent/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -74,7 +75,9 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
           </nav>
 
           {/* Profile menu (desktop) */}
-          <div className="relative hidden md:block">
+          <div className="relative hidden md:flex md:items-center md:gap-1">
+            <NotificationBell role="agent" />
+            <div className="relative">
             <button
               onClick={() => setMenuOpen((o) => !o)}
               className="flex items-center gap-2 rounded-xl p-2 text-sm transition-colors hover:bg-white/70"
@@ -117,6 +120,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
                 </motion.div>
               )}
             </AnimatePresence>
+          </div>
           </div>
 
           {/* Mobile sign-out */}
