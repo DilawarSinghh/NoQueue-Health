@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen,
+  Building2,
   ChevronDown,
   ChevronUp,
   IndianRupee,
@@ -21,6 +22,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { DEPARTMENTS, HOSPITAL_NAME } from "@/lib/constants/hospital";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -30,7 +39,6 @@ interface AgentPost {
   description: string | null;
   price: number;
   department: string | null;
-  hospital: string | null;
   created_at: string;
   profiles: {
     id: string;
@@ -48,7 +56,6 @@ interface AgentPost {
 interface PatientRequest {
   id: string;
   department: string | null;
-  hospital: string | null;
   price_offered: number | null;
   min_rating: number;
   notes: string | null;
@@ -58,9 +65,14 @@ interface PatientRequest {
 
 // ─── Post a Request modal ─────────────────────────────────────────────────────
 
-function PostRequestModal({ onClose, onPosted }: { onClose: () => void; onPosted: (r: PatientRequest) => void }) {
+function PostRequestModal({
+  onClose,
+  onPosted,
+}: {
+  onClose: () => void;
+  onPosted: (r: PatientRequest) => void;
+}) {
   const [department, setDepartment]     = useState("");
-  const [hospital, setHospital]         = useState("");
   const [priceOffered, setPriceOffered] = useState("");
   const [minRating, setMinRating]       = useState(0);
   const [notes, setNotes]               = useState("");
@@ -69,6 +81,10 @@ function PostRequestModal({ onClose, onPosted }: { onClose: () => void; onPosted
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!department) {
+      setError("Please select a department.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
 
@@ -80,8 +96,7 @@ function PostRequestModal({ onClose, onPosted }: { onClose: () => void; onPosted
       .from("patient_requests")
       .insert({
         patient_id:    user.id,
-        department:    department.trim() || null,
-        hospital:      hospital.trim()   || null,
+        department,
         price_offered: priceOffered ? Number(priceOffered) : null,
         min_rating:    minRating,
         notes:         notes.trim() || null,
@@ -121,28 +136,31 @@ function PostRequestModal({ onClose, onPosted }: { onClose: () => void; onPosted
             </button>
           </div>
 
+          {/* Implicit hospital badge */}
+          <div className="mb-4 flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700">
+            <Building2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {HOSPITAL_NAME}
+          </div>
+
           <form onSubmit={handleSubmit} className="grid gap-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label htmlFor="req-dept">Department</Label>
-                <Input
-                  id="req-dept"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="e.g. Cardiology"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="req-hosp">Hospital</Label>
-                <Input
-                  id="req-hosp"
-                  value={hospital}
-                  onChange={(e) => setHospital(e.target.value)}
-                  placeholder="e.g. AIIMS Delhi"
-                />
-              </div>
+            {/* Department — required Select */}
+            <div className="grid gap-2">
+              <Label htmlFor="req-dept">Department <span className="text-destructive">*</span></Label>
+              <Select value={department} onValueChange={setDepartment} required>
+                <SelectTrigger id="req-dept" aria-required="true">
+                  <SelectValue placeholder="Select a department…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DEPARTMENTS.map((dept) => (
+                    <SelectItem key={dept} value={dept}>
+                      {dept}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
+            {/* Price offered */}
             <div className="grid gap-2">
               <Label htmlFor="req-price">Price offered (₹, optional)</Label>
               <Input
@@ -155,9 +173,13 @@ function PostRequestModal({ onClose, onPosted }: { onClose: () => void; onPosted
               />
             </div>
 
+            {/* Min rating slider */}
             <div className="grid gap-2">
               <Label htmlFor="req-rating">
-                Minimum agent rating: <span className="font-semibold">{minRating > 0 ? `${minRating}+` : "Any"}</span>
+                Minimum agent rating:{" "}
+                <span className="font-semibold">
+                  {minRating > 0 ? `${minRating}+` : "Any"}
+                </span>
               </Label>
               <input
                 id="req-rating"
@@ -174,6 +196,7 @@ function PostRequestModal({ onClose, onPosted }: { onClose: () => void; onPosted
               </div>
             </div>
 
+            {/* Notes */}
             <div className="grid gap-2">
               <Label htmlFor="req-notes">Notes (optional)</Label>
               <Textarea
@@ -203,7 +226,7 @@ function PostRequestModal({ onClose, onPosted }: { onClose: () => void; onPosted
 // ─── Agent post card ──────────────────────────────────────────────────────────
 
 function AgentCard({ post }: { post: AgentPost }) {
-  const router  = useRouter();
+  const router = useRouter();
   const [booking, setBooking]   = useState<"idle" | "loading" | "done" | "exists">("idle");
   const [msgBusy, setMsgBusy]   = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -275,9 +298,9 @@ function AgentCard({ post }: { post: AgentPost }) {
                 {post.profiles?.full_name ?? "Agent"}
               </p>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                {[post.hospital, post.department].filter(Boolean).join(" · ")}
+                {post.department ?? ""}
                 {ap?.experience_years != null &&
-                  ` · ${ap.experience_years} yr${ap.experience_years !== 1 ? "s" : ""} exp`}
+                  `${post.department ? " · " : ""}${ap.experience_years} yr${ap.experience_years !== 1 ? "s" : ""} exp`}
               </p>
             </div>
 
@@ -323,7 +346,7 @@ function AgentCard({ post }: { post: AgentPost }) {
                       <p className="mt-2 text-sm text-muted-foreground">{post.description}</p>
                     )}
                     {ap?.bio && (
-                      <p className="mt-1 text-sm text-muted-foreground italic">{ap.bio}</p>
+                      <p className="mt-1 text-sm italic text-muted-foreground">{ap.bio}</p>
                     )}
                   </motion.div>
                 )}
@@ -340,7 +363,6 @@ function AgentCard({ post }: { post: AgentPost }) {
 
       {/* Actions */}
       <div className="mt-4 flex flex-wrap gap-2">
-        {/* Message */}
         <Button
           size="sm"
           variant="outline"
@@ -353,7 +375,7 @@ function AgentCard({ post }: { post: AgentPost }) {
         </Button>
 
         {/* WhatsApp — only shown after booking to protect agent's number */}
-        {booking === "done" || booking === "exists" ? (
+        {(booking === "done" || booking === "exists") && (
           <a
             href={`https://wa.me/${(post as unknown as { whatsapp_number?: string }).whatsapp_number ?? ""}`}
             target="_blank"
@@ -363,9 +385,8 @@ function AgentCard({ post }: { post: AgentPost }) {
             <Phone className="h-4 w-4" aria-hidden="true" />
             WhatsApp
           </a>
-        ) : null}
+        )}
 
-        {/* Book */}
         {booking === "idle" && (
           <Button size="sm" onClick={handleBook} className="gap-1.5">
             <BookOpen className="h-4 w-4" aria-hidden="true" />
@@ -373,9 +394,7 @@ function AgentCard({ post }: { post: AgentPost }) {
           </Button>
         )}
         {booking === "loading" && (
-          <Button size="sm" disabled className="gap-1.5">
-            Booking…
-          </Button>
+          <Button size="sm" disabled className="gap-1.5">Booking…</Button>
         )}
         {booking === "done" && (
           <span className="flex items-center gap-1.5 rounded-xl bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-700">
@@ -422,7 +441,7 @@ function MyRequests({
         <GlassCard key={r.id} className="flex items-start justify-between gap-3 p-4">
           <div className="min-w-0">
             <p className="text-sm font-medium">
-              {[r.hospital, r.department].filter(Boolean).join(" · ") || "General request"}
+              {r.department ?? "General request"}
             </p>
             <div className="mt-0.5 flex flex-wrap gap-3 text-xs text-muted-foreground">
               {r.price_offered != null && (
@@ -473,22 +492,23 @@ function HospitalAgentsInner() {
   const [page, setPage]             = useState(1);
   const PAGE_SIZE = 10;
 
-  // Filters
-  const [hospital, setHospital]     = useState(searchParams.get("hospital") ?? "");
+  // Filters — hospital removed, department uses Select
   const [department, setDepartment] = useState(searchParams.get("department") ?? "");
   const [maxPrice, setMaxPrice]     = useState(searchParams.get("maxPrice") ?? "");
   const [search, setSearch]         = useState("");
 
   // Modal + own requests
-  const [showModal, setShowModal]       = useState(false);
-  const [myRequests, setMyRequests]     = useState<PatientRequest[]>([]);
-  const [reqLoading, setReqLoading]     = useState(true);
+  const [showModal, setShowModal]   = useState(false);
+  const [myRequests, setMyRequests] = useState<PatientRequest[]>([]);
+  const [reqLoading, setReqLoading] = useState(true);
 
   const fetchPosts = useCallback(async (pageNum = 1) => {
     setLoading(true);
     setLoadError(null);
-    const params = new URLSearchParams({ page: String(pageNum), pageSize: String(PAGE_SIZE) });
-    if (hospital)   params.set("hospital",   hospital);
+    const params = new URLSearchParams({
+      page:     String(pageNum),
+      pageSize: String(PAGE_SIZE),
+    });
     if (department) params.set("department", department);
     if (maxPrice)   params.set("maxPrice",   maxPrice);
 
@@ -502,9 +522,9 @@ function HospitalAgentsInner() {
       setLoadError(e instanceof Error ? e.message : "Failed to load agents");
     }
     setLoading(false);
-  }, [hospital, department, maxPrice]);
+  }, [department, maxPrice]);
 
-  // Load own active requests
+  // Load own active requests (once)
   const requestsLoaded = useRef(false);
   useEffect(() => {
     if (requestsLoaded.current) return;
@@ -514,7 +534,7 @@ function HospitalAgentsInner() {
       if (!user) { setReqLoading(false); return; }
       const { data } = await supabase
         .from("patient_requests")
-        .select("*")
+        .select("id, department, price_offered, min_rating, notes, created_at, active")
         .eq("patient_id", user.id)
         .eq("active", true)
         .order("created_at", { ascending: false });
@@ -533,7 +553,7 @@ function HospitalAgentsInner() {
   };
 
   const clearFilters = () => {
-    setHospital(""); setDepartment(""); setMaxPrice(""); setSearch("");
+    setDepartment(""); setMaxPrice(""); setSearch("");
     setPage(1);
     fetchPosts(1);
   };
@@ -541,7 +561,7 @@ function HospitalAgentsInner() {
   // Client-side search filter on top of server results
   const visible = search.trim()
     ? posts.filter((p) =>
-        [p.title, p.description, p.hospital, p.department, p.profiles?.full_name]
+        [p.title, p.description, p.department, p.profiles?.full_name]
           .join(" ")
           .toLowerCase()
           .includes(search.toLowerCase())
@@ -565,10 +585,17 @@ function HospitalAgentsInner() {
         </Button>
       </div>
 
+      {/* Static hospital context banner */}
+      <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700">
+        <Building2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+        Showing agents at {HOSPITAL_NAME}
+      </div>
+
       {/* Filter bar */}
       <GlassCard className="p-4">
-        <form onSubmit={applyFilters} className="grid gap-3 sm:grid-cols-4">
-          <div className="relative sm:col-span-4 md:col-span-1">
+        <form onSubmit={applyFilters} className="grid gap-3 sm:grid-cols-3">
+          {/* Search */}
+          <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
@@ -578,16 +605,23 @@ function HospitalAgentsInner() {
               className="h-11 w-full rounded-xl border border-input bg-white/60 pl-9 pr-4 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
             />
           </div>
-          <Input
-            value={hospital}
-            onChange={(e) => setHospital(e.target.value)}
-            placeholder="Hospital"
-          />
-          <Input
-            value={department}
-            onChange={(e) => setDepartment(e.target.value)}
-            placeholder="Department"
-          />
+
+          {/* Department Select */}
+          <Select value={department} onValueChange={(v) => setDepartment(v === "__all__" ? "" : v)}>
+            <SelectTrigger aria-label="Filter by department">
+              <SelectValue placeholder="All departments" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">All departments</SelectItem>
+              {DEPARTMENTS.map((dept) => (
+                <SelectItem key={dept} value={dept}>
+                  {dept}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Max price */}
           <Input
             type="number"
             min={0}
@@ -595,7 +629,8 @@ function HospitalAgentsInner() {
             onChange={(e) => setMaxPrice(e.target.value)}
             placeholder="Max price (₹)"
           />
-          <div className="flex gap-2 sm:col-span-4 md:col-span-4 justify-end">
+
+          <div className="flex gap-2 sm:col-span-3 justify-end">
             <Button type="submit" size="sm">Apply filters</Button>
             <Button type="button" size="sm" variant="ghost" onClick={clearFilters}>Clear</Button>
           </div>
@@ -682,9 +717,7 @@ function HospitalAgentsInner() {
       {!reqLoading && (
         <MyRequests
           requests={myRequests}
-          onCancel={(id) =>
-            setMyRequests((prev) => prev.filter((r) => r.id !== id))
-          }
+          onCancel={(id) => setMyRequests((prev) => prev.filter((r) => r.id !== id))}
         />
       )}
 

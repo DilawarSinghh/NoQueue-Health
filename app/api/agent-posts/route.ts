@@ -9,16 +9,17 @@ import { getSupabaseAdmin } from "@/lib/supabase";
  * revealed server-side after a booking or DM is initiated
  * (spec §10 contact masking decision).
  *
+ * Hospital is now implicit (single-hospital deployment: Safdarjung Hospital).
+ * The `hospital` column has been removed from agent_posts — no hospital filter needed.
+ *
  * Query params:
- *   hospital   — filter by hospital (optional, case-insensitive)
- *   department — filter by department (optional, case-insensitive)
+ *   department — filter by department (optional, exact match from DEPARTMENTS constant)
  *   maxPrice   — filter posts priced at or below this value (optional)
  *   page       — 1-indexed page number (default 1)
  *   pageSize   — results per page (default 20, max 50)
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const hospital   = searchParams.get("hospital")   ?? "";
   const department = searchParams.get("department") ?? "";
   const maxPrice   = searchParams.get("maxPrice");
   const page       = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
   let query = admin
     .from("agent_posts")
     .select(
-      `id, title, description, price, department, hospital, created_at,
+      `id, title, description, price, department, created_at,
        profiles!agent_posts_agent_id_fkey (
          id,
          full_name,
@@ -47,8 +48,7 @@ export async function GET(request: Request) {
     )
     .eq("active", true);
 
-  if (hospital)   query = query.ilike("hospital",   `%${hospital}%`);
-  if (department) query = query.ilike("department", `%${department}%`);
+  if (department) query = query.eq("department", department);
   if (maxPrice)   query = query.lte("price", Number(maxPrice));
 
   const from = (page - 1) * pageSize;

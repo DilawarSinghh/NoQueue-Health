@@ -102,6 +102,13 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
                   transition={{ duration: 0.15 }}
                   className="absolute right-0 top-full mt-1 w-44 rounded-2xl border border-white/40 bg-white/80 shadow-lg backdrop-blur-md"
                 >
+                  <Link
+                    href="/patient/profile"
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    <User className="h-4 w-4" /> Profile
+                  </Link>
                   <button
                     onClick={signOut}
                     className="flex w-full items-center gap-2 px-4 py-3 text-sm text-muted-foreground hover:text-destructive"
@@ -113,16 +120,17 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
             </AnimatePresence>
           </div>
 
-          {/* Mobile sign-out */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-auto md:hidden"
-            onClick={signOut}
-            aria-label="Sign out"
-          >
-            <LogOut className="h-5 w-5" />
-          </Button>
+          {/* Mobile: profile + sign-out */}
+          <div className="ml-auto flex items-center gap-1 md:hidden">
+            <Button variant="ghost" size="icon" asChild aria-label="Profile">
+              <Link href="/patient/profile">
+                <User className="h-5 w-5" />
+              </Link>
+            </Button>
+            <Button variant="ghost" size="icon" onClick={signOut} aria-label="Sign out">
+              <LogOut className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Mobile bottom nav */}

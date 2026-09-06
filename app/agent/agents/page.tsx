@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BriefcaseMedical,
+  Building2,
   ChevronRight,
   IndianRupee,
   MessageSquare,
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { HOSPITAL_NAME } from "@/lib/constants/hospital";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,7 +31,6 @@ interface AgentPost {
   description: string | null;
   price: number;
   department: string | null;
-  hospital: string | null;
   active: boolean;
   created_at: string;
 }
@@ -37,7 +38,6 @@ interface AgentPost {
 interface PatientRequest {
   id: string;
   department: string | null;
-  hospital: string | null;
   price_offered: number | null;
   min_rating: number;
   notes: string | null;
@@ -49,25 +49,17 @@ interface PatientRequest {
 
 function CreatePostForm({
   defaultDept,
-  defaultHospital,
   onCreated,
 }: {
   defaultDept: string;
-  defaultHospital: string;
   onCreated: (post: AgentPost) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen]               = useState(false);
   const [title, setTitle]             = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice]             = useState("");
-  const [department, setDepartment]   = useState(defaultDept);
-  const [hospital, setHospital]       = useState(defaultHospital);
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState<string | null>(null);
-
-  // keep defaults in sync if profile loads after mount
-  useEffect(() => { setDepartment(defaultDept); }, [defaultDept]);
-  useEffect(() => { setHospital(defaultHospital); }, [defaultHospital]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,12 +76,13 @@ function CreatePostForm({
     const { data, error: dbErr } = await supabase
       .from("agent_posts")
       .insert({
-        agent_id: user.id,
-        title: title.trim(),
+        agent_id:    user.id,
+        title:       title.trim(),
         description: description.trim() || null,
-        price: Number(price),
-        department: department.trim() || null,
-        hospital: hospital.trim() || null,
+        price:       Number(price),
+        // department is inherited from agent_profiles — stored at insert time via
+        // a DB default/trigger, or fetched client-side and stored explicitly below
+        department:  defaultDept || null,
       })
       .select()
       .single();
@@ -119,7 +112,21 @@ function CreatePostForm({
             className="overflow-hidden"
           >
             <GlassCard className="mt-4 p-5">
-              <h2 className="mb-4 font-semibold">New service post</h2>
+              <h2 className="mb-1 font-semibold">New service post</h2>
+
+              {/* Implicit hospital + department badges */}
+              <div className="mb-4 flex flex-wrap gap-2">
+                <span className="flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-0.5 text-xs font-medium text-blue-700">
+                  <Building2 className="h-3 w-3" aria-hidden="true" />
+                  {HOSPITAL_NAME}
+                </span>
+                {defaultDept && (
+                  <span className="rounded-full border border-primary/20 bg-primary/10 px-3 py-0.5 text-xs font-medium text-primary">
+                    {defaultDept}
+                  </span>
+                )}
+              </div>
+
               <form onSubmit={handleSubmit} className="grid gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="title">Title</Label>
@@ -131,6 +138,7 @@ function CreatePostForm({
                     required
                   />
                 </div>
+
                 <div className="grid gap-2">
                   <Label htmlFor="desc">Description (optional)</Label>
                   <Textarea
@@ -141,36 +149,17 @@ function CreatePostForm({
                     rows={3}
                   />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label htmlFor="price">Price (₹)</Label>
-                    <Input
-                      id="price"
-                      type="number"
-                      min={1}
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                      placeholder="500"
-                      required
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="dept">Department</Label>
-                    <Input
-                      id="dept"
-                      value={department}
-                      onChange={(e) => setDepartment(e.target.value)}
-                      placeholder="e.g. Cardiology"
-                    />
-                  </div>
-                </div>
+
                 <div className="grid gap-2">
-                  <Label htmlFor="hosp">Hospital</Label>
+                  <Label htmlFor="price">Price (₹)</Label>
                   <Input
-                    id="hosp"
-                    value={hospital}
-                    onChange={(e) => setHospital(e.target.value)}
-                    placeholder="e.g. AIIMS Delhi"
+                    id="price"
+                    type="number"
+                    min={1}
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="500"
+                    required
                   />
                 </div>
 
@@ -181,11 +170,7 @@ function CreatePostForm({
                 )}
 
                 <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setOpen(false)}
-                  >
+                  <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
                     Cancel
                   </Button>
                   <Button type="submit" disabled={submitting}>
@@ -230,14 +215,16 @@ function PostCard({
               {post.description}
             </p>
           )}
-          <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
-            {post.hospital && <span>{post.hospital}</span>}
+          <div className="mt-2 flex flex-wrap gap-2">
             {post.department && (
-              <>
-                {post.hospital && <span>·</span>}
-                <span>{post.department}</span>
-              </>
+              <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                {post.department}
+              </span>
             )}
+            <span className="flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs text-blue-700">
+              <Building2 className="h-3 w-3" aria-hidden="true" />
+              {HOSPITAL_NAME}
+            </span>
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -263,7 +250,7 @@ function PostCard({
 
 function RequestCard({ req }: { req: PatientRequest }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy]   = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const startDm = async () => {
@@ -273,7 +260,6 @@ function RequestCard({ req }: { req: PatientRequest }) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError("Session expired."); setBusy(false); return; }
 
-    // Find or create thread between this agent and patient
     const { data: existing } = await supabase
       .from("threads")
       .select("id")
@@ -292,7 +278,7 @@ function RequestCard({ req }: { req: PatientRequest }) {
     const { data: thread, error: threadErr } = await supabase
       .from("threads")
       .insert({
-        type: "agent_patient",
+        type:          "agent_patient",
         participant_a: user.id,
         participant_b: req.id,
       })
@@ -325,7 +311,6 @@ function RequestCard({ req }: { req: PatientRequest }) {
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            {req.hospital && <span>{req.hospital}</span>}
             {req.department && <span>{req.department}</span>}
             {req.price_offered != null && (
               <span className="flex items-center gap-0.5 font-medium text-teal-700">
@@ -363,19 +348,18 @@ type Tab = "posts" | "requests";
 
 function AgentAgentsInner() {
   const searchParams = useSearchParams();
-  const initialTab = (searchParams.get("tab") === "requests" ? "requests" : "posts") as Tab;
+  const initialTab   = (searchParams.get("tab") === "requests" ? "requests" : "posts") as Tab;
   const [tab, setTab] = useState<Tab>(initialTab);
 
-  const [posts, setPosts]             = useState<AgentPost[]>([]);
-  const [requests, setRequests]       = useState<PatientRequest[]>([]);
-  const [loadingPosts, setLoadingPosts]         = useState(true);
-  const [loadingRequests, setLoadingRequests]   = useState(true);
-  const [defaultDept, setDefaultDept]   = useState("");
-  const [defaultHospital, setDefaultHospital] = useState("");
+  const [posts, setPosts]                     = useState<AgentPost[]>([]);
+  const [requests, setRequests]               = useState<PatientRequest[]>([]);
+  const [loadingPosts, setLoadingPosts]       = useState(true);
+  const [loadingRequests, setLoadingRequests] = useState(true);
+  const [defaultDept, setDefaultDept]         = useState("");
 
   const hasFetchedRequests = useRef(false);
 
-  // Load own posts + profile defaults
+  // Load own posts + department from profile
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -390,21 +374,18 @@ function AgentAgentsInner() {
           .order("created_at", { ascending: false }),
         supabase
           .from("agent_profiles")
-          .select("department, hospital")
+          .select("department")
           .eq("user_id", user.id)
           .maybeSingle(),
       ]);
 
-      if (postsRes.data) setPosts(postsRes.data as AgentPost[]);
-      if (profRes.data) {
-        setDefaultDept(profRes.data.department ?? "");
-        setDefaultHospital(profRes.data.hospital ?? "");
-      }
+      if (postsRes.data)  setPosts(postsRes.data as AgentPost[]);
+      if (profRes.data)   setDefaultDept(profRes.data.department ?? "");
       setLoadingPosts(false);
     });
   }, []);
 
-  // Load patient requests matching agent's dept/hospital (lazy — only when tab switches)
+  // Load patient requests (lazy — only when tab switches)
   useEffect(() => {
     if (tab !== "requests" || hasFetchedRequests.current) return;
     hasFetchedRequests.current = true;
@@ -413,19 +394,14 @@ function AgentAgentsInner() {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return;
 
-      // Fetch all active requests, let the UI show them all (agent can scroll/filter)
       const { data } = await supabase
         .from("patient_requests")
-        .select(
-          "id, department, hospital, price_offered, min_rating, notes, created_at, patient_id"
-        )
+        .select("id, department, price_offered, min_rating, notes, created_at, patient_id")
         .eq("active", true)
         .order("created_at", { ascending: false });
 
       if (!data) { setLoadingRequests(false); return; }
 
-      // Fetch requesting patient names/avatars via a server API route
-      // (avoids exposing private profile data through direct RLS reads)
       const ids = Array.from(new Set(data.map((r) => r.patient_id)));
       const { data: profiles } = await supabase
         .from("profiles")
@@ -459,7 +435,6 @@ function AgentAgentsInner() {
         {tab === "posts" && (
           <CreatePostForm
             defaultDept={defaultDept}
-            defaultHospital={defaultHospital}
             onCreated={(post) => setPosts((prev) => [post, ...prev])}
           />
         )}

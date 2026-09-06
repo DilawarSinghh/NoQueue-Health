@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
+  CheckCircle,
   FileText,
   MessageSquareText,
   ShieldCheck,
@@ -25,7 +26,17 @@ const steps = [
 ];
 
 export default function LandingPage() {
-  const router = useRouter();
+  return (
+    <Suspense>
+      <LandingPageInner />
+    </Suspense>
+  );
+}
+
+function LandingPageInner() {
+  const router       = useRouter();
+  const searchParams = useSearchParams();
+  const deleted      = searchParams.get("deleted") === "1";
 
   useEffect(() => {
     const supabase = createClient();
@@ -57,6 +68,16 @@ export default function LandingPage() {
       </header>
 
       <section className="mx-auto max-w-5xl px-4 pb-12 pt-16 text-center">
+        {deleted && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 flex items-center justify-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-700"
+          >
+            <CheckCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Your account has been deleted. We&apos;re sorry to see you go.
+          </motion.div>
+        )}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
