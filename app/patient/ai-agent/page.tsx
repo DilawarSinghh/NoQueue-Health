@@ -1,26 +1,35 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { AlertTriangle, Bot, CheckCircle2, Send } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  Mic,
+  MicOff,
+  Send,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import {
-  useIntakeStore,
-  type ChatMessage,
-} from "@/lib/store";
+import { useIntakeStore, type ChatMessage } from "@/lib/store";
 import {
   type PatientContext,
   countCollectedFields,
   INTAKE_FIELD_ORDER,
 } from "@/lib/schema";
+import { useVoiceInput } from "@/lib/hooks/useVoiceInput";
+import { useVoiceSpeech } from "@/lib/hooks/useVoiceSpeech";
 
-// ─── Emergency banner ────────────────────────────────────────────────────────
+type InputMode = "text" | "voice";
 
+// ─── Emergency banner ─────────────────────────────────────────────────────────
 function EmergencyBanner({ message }: { message: string }) {
   return (
     <motion.div
@@ -47,8 +56,7 @@ function EmergencyBanner({ message }: { message: string }) {
   );
 }
 
-// ─── Progress bar ────────────────────────────────────────────────────────────
-
+// ─── Progress bar ─────────────────────────────────────────────────────────────
 function ProgressBar({ collected }: { collected: number }) {
   const total = INTAKE_FIELD_ORDER.length;
   const pct   = Math.round((collected / total) * 100);
@@ -70,8 +78,143 @@ function ProgressBar({ collected }: { collected: number }) {
   );
 }
 
-// ─── Page ────────────────────────────────────────────────────────────────────
+// ─── Mode toggle ──────────────────────────────────────────────────────────────
+function ModeToggle({
+  mode,
+  onToggle,
+  voiceSupported,
+}: {
+  mode: InputMode;
+  onToggle: (m: InputMode) => void;
+  voiceSupported: boolean;
+}) {
+  return (
+    <div className="flex w-fit gap-1 rounded-xl border border-white/40 bg-white/40 p-1 backdrop-blur-sm">
+      {(["text", "voice"] as InputMode[]).map((m) => (
+        <button
+          key={m}
+          onClick={() => onToggle(m)}
+          disabled={m === "voice" && !voiceSupported}
+          className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+            mode === m
+              ? "bg-white shadow-sm text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          title={m === "voice" && !voiceSupported ? "Voice not supported in this browser" : undefined}
+        >
+          {m === "text" ? <Send className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+          {m === "text" ? "Text" : "Voice"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
+// ─── Voice controls ───────────────────────────────────────────────────────────
+function VoicePanel({
+  listening,
+  speaking,
+  transcript,
+  interim,
+  inputError,
+  onStartListening,
+  onStopListening,
+  onStopSpeaking,
+  onSubmit,
+  onTranscriptChange,
+  disabled,
+}: {
+  listening:          boolean;
+  speaking:           boolean;
+  transcript:         string;
+  interim:            string;
+  inputError:         string | null;
+  onStartListening:   () => void;
+  onStopListening:    () => void;
+  onStopSpeaking:     () => void;
+  onSubmit:           (text: string) => void;
+  onTranscriptChange: (t: string) => void;
+  disabled:           boolean;
+}) {
+  return (
+    <div className="border-t border-white/40 p-4 space-y-3">
+      {/* Live transcript — editable so user can fix mis-recognitions */}
+      <div className="grid gap-1.5">
+        <Label htmlFor="voice-transcript" className="text-xs text-muted-foreground">
+          Your answer {listening && <span className="text-red-500 animate-pulse">● Recording…</span>}
+        </Label>
+        <div className="relative">
+          <textarea
+            id="voice-transcript"
+            value={transcript + (interim ? ` ${interim}` : "")}
+            onChange={(e) => {
+              // strip the interim part — user edits only the final transcript
+              onTranscriptChange(e.target.value);
+            }}
+            rows={2}
+            placeholder={listening ? "Listening… speak now" : "Press the mic to start speaking"}
+            className="w-full resize-none rounded-xl border border-input bg-white/60 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 placeholder:text-muted-foreground"
+            aria-label="Voice transcript — editable"
+          />
+          {interim && (
+            <span className="absolute bottom-2 right-3 text-xs text-muted-foreground/60 italic">
+              {interim}
+            </span>
+          )}
+        </div>
+        {inputError && (
+          <p className="text-xs text-destructive" role="alert">{inputError}</p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        {/* Mic toggle */}
+        <button
+          onClick={listening ? onStopListening : onStartListening}
+          disabled={disabled}
+          aria-label={listening ? "Stop recording" : "Start recording"}
+          className={`flex h-12 w-12 items-center justify-center rounded-full transition-all disabled:opacity-50 ${
+            listening
+              ? "bg-red-500 text-white shadow-lg shadow-red-200 animate-pulse"
+              : "bg-primary/10 text-primary hover:bg-primary/20"
+          }`}
+        >
+          {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+        </button>
+
+        {/* Stop AI speaking */}
+        {speaking && (
+          <button
+            onClick={onStopSpeaking}
+            aria-label="Stop AI speaking"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200"
+          >
+            <VolumeX className="h-4 w-4" />
+          </button>
+        )}
+        {speaking && !listening && (
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Volume2 className="h-3.5 w-3.5 text-primary animate-pulse" /> AI is speaking…
+          </span>
+        )}
+
+        {/* Submit transcript */}
+        <Button
+          className="ml-auto gap-2"
+          onClick={() => {
+            onStopListening();
+            onSubmit(transcript.trim());
+          }}
+          disabled={!transcript.trim() || disabled}
+        >
+          <Send className="h-4 w-4" /> Submit
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AIAgentPage() {
   const router = useRouter();
 
@@ -85,19 +228,55 @@ export default function AIAgentPage() {
 
   const [profileLoading, setProfileLoading] = useState(true);
   const [started, setStarted]               = useState(false);
-  const [input, setInput]                   = useState("");
+  const [inputMode, setInputMode]           = useState<InputMode>("text");
+  const [textInput, setTextInput]           = useState("");
   const [aiLoading, setAiLoading]           = useState(false);
   const [emergency, setEmergency]           = useState<string | null>(null);
   const [apiError, setApiError]             = useState<string | null>(null);
   const [isComplete, setIsComplete]         = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef  = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice hooks
+  const voiceInput  = useVoiceInput("en-IN");
+  const voiceSpeech = useVoiceSpeech("en-IN");
+
+  // If either API is not supported, force text mode and show notice
+  const voiceFullySupported = voiceInput.supported && voiceSpeech.supported;
 
   // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation, aiLoading]);
+
+  // Speak AI messages in voice mode
+  useEffect(() => {
+    if (inputMode !== "voice" || conversation.length === 0) return;
+    const last = conversation[conversation.length - 1];
+    if (last.role === "assistant" && !aiLoading) {
+      voiceSpeech.speak(last.content);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation, aiLoading, inputMode]);
+
+  // Emergency: stop mic + stop speaking immediately
+  useEffect(() => {
+    if (emergency) {
+      voiceInput.stopListening();
+      voiceSpeech.stop();
+      if (emergency) voiceSpeech.speak(emergency);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emergency]);
+
+  // Switch modes — stop anything in progress
+  const handleModeSwitch = (m: InputMode) => {
+    voiceInput.stopListening();
+    voiceSpeech.stop();
+    voiceInput.resetTranscript();
+    setInputMode(m);
+  };
 
   // Load patient profile
   useEffect(() => {
@@ -118,9 +297,9 @@ export default function AIAgentPage() {
 
         const ctx: PatientContext = {
           name:              (prof.full_name as string | null) ?? user.email ?? "Patient",
-          age:               pp?.age               ?? null,
-          gender:            pp?.gender            ?? null,
-          allergies:         pp?.allergies         ?? null,
+          age:               (pp as { age?: number | null } | null)?.age               ?? null,
+          gender:            (pp as { gender?: string | null } | null)?.gender          ?? null,
+          allergies:         (pp as { allergies?: string | null } | null)?.allergies    ?? null,
           chronicConditions: (pp as { chronic_conditions?: string | null } | null)?.chronic_conditions ?? null,
         };
         setPatientContext(ctx);
@@ -130,13 +309,17 @@ export default function AIAgentPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Send a message to the AI
-  const sendMessage = async (userText: string) => {
+  // Core: send a message through the AI intake API
+  const sendMessage = useCallback(async (userText: string) => {
     if (!userText.trim() || aiLoading || emergency) return;
+
+    voiceInput.stopListening();
+    voiceSpeech.stop();
 
     const userMsg: ChatMessage = { role: "user", content: userText.trim() };
     addMessage(userMsg);
-    setInput("");
+    setTextInput("");
+    voiceInput.resetTranscript();
     setAiLoading(true);
     setApiError(null);
 
@@ -159,40 +342,33 @@ export default function AIAgentPage() {
         return;
       }
 
-      // Emergency — halt everything
       if (json.emergency === true) {
         setEmergency(json.message);
         setAiLoading(false);
         return;
       }
 
-      // Merge updated structured data
-      if (json.updatedData) {
-        setData({ ...data, ...json.updatedData });
-      }
+      if (json.updatedData) setData({ ...data, ...json.updatedData });
 
-      if (json.isComplete) {
-        setIsComplete(true);
-        addMessage({
-          role:    "assistant",
-          content: json.nextQuestion ?? "Thanks — I have everything I need. Please review your information below.",
-        });
-      } else if (json.nextQuestion) {
-        addMessage({ role: "assistant", content: json.nextQuestion });
-      }
+      const reply = json.nextQuestion
+        ?? (json.isComplete ? "Thanks — I have everything I need. Please review your information." : null);
+
+      if (reply) addMessage({ role: "assistant", content: reply });
+
+      if (json.isComplete) setIsComplete(true);
+
     } catch {
       setApiError("Network error — please check your connection and try again.");
     }
 
     setAiLoading(false);
-    setTimeout(() => inputRef.current?.focus(), 50);
-  };
+    setTimeout(() => textInputRef.current?.focus(), 50);
+  }, [aiLoading, emergency, conversation, patientContext, data, addMessage, setData, voiceInput, voiceSpeech]);
 
-  // Kick off the intake with the first question
+  // Kick off with the first AI question
   const handleStart = async () => {
     if (!consented) return;
     reset();
-    // Re-apply consent + context after reset
     setConsented(true);
     if (patientContext) setPatientContext(patientContext);
     setStarted(true);
@@ -200,7 +376,6 @@ export default function AIAgentPage() {
     setEmergency(null);
     setApiError(null);
 
-    // Prime the conversation with a silent user trigger
     setAiLoading(true);
     try {
       const res = await fetch("/api/ai-intake", {
@@ -223,8 +398,8 @@ export default function AIAgentPage() {
     setAiLoading(false);
   };
 
-  const handleKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
+  const handleTextKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(textInput); }
   };
 
   const collected = countCollectedFields(data);
@@ -240,9 +415,24 @@ export default function AIAgentPage() {
             </div>
             <h1 className="mt-4 text-2xl font-semibold tracking-tight">AI Intake Agent</h1>
             <p className="mt-2 text-muted-foreground">
-              Answer a few questions about your symptoms and I&apos;ll prepare a
+              Answer a few questions about your symptoms. I&apos;ll prepare a
               doctor-ready summary — no repeated basics.
             </p>
+
+            {/* Mode selector */}
+            <div className="mt-5">
+              <p className="mb-2 text-sm font-medium text-muted-foreground">Choose input mode:</p>
+              <ModeToggle
+                mode={inputMode}
+                onToggle={setInputMode}
+                voiceSupported={voiceFullySupported}
+              />
+              {!voiceFullySupported && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Voice mode is not supported in this browser — text mode will be used.
+                </p>
+              )}
+            </div>
 
             {/* What we already know */}
             {!profileLoading && patientContext && (
@@ -292,16 +482,26 @@ export default function AIAgentPage() {
   // ── Chat screen ───────────────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      {/* Progress */}
-      <GlassCard className="p-4">
+      {/* Progress + mode toggle */}
+      <GlassCard className="p-4 space-y-3">
         <ProgressBar collected={collected} />
+        <div className="flex items-center justify-between gap-3">
+          <ModeToggle
+            mode={inputMode}
+            onToggle={handleModeSwitch}
+            voiceSupported={voiceFullySupported}
+          />
+          {voiceInput.error && (
+            <p className="text-xs text-destructive">{voiceInput.error}</p>
+          )}
+        </div>
       </GlassCard>
 
       {/* Emergency banner */}
       {emergency && <EmergencyBanner message={emergency} />}
 
       {/* Chat window */}
-      <GlassCard className="flex h-[60dvh] flex-col overflow-hidden p-0">
+      <GlassCard className="flex flex-col overflow-hidden p-0" style={{ height: "58dvh" }}>
         <div className="flex-1 overflow-y-auto space-y-3 p-4">
           {conversation.map((msg, i) => (
             <motion.div
@@ -321,6 +521,9 @@ export default function AIAgentPage() {
                 {msg.role === "assistant" && (
                   <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-primary/60">
                     <Bot className="h-3 w-3" /> AI Agent
+                    {voiceSpeech.speaking && inputMode === "voice" && (
+                      <Volume2 className="h-3 w-3 animate-pulse text-primary ml-1" />
+                    )}
                   </p>
                 )}
                 <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -354,34 +557,55 @@ export default function AIAgentPage() {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
+        {/* Input area — text or voice */}
         {!emergency && !isComplete && (
-          <div className="border-t border-white/40 p-3">
-            {apiError && (
-              <p className="mb-2 text-xs text-destructive" role="alert">{apiError}</p>
-            )}
-            <div className="flex items-center gap-2">
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKey}
-                placeholder="Type your answer…"
-                aria-label="Your answer"
-                disabled={aiLoading}
-                className="flex-1 rounded-xl border border-input bg-white/60 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 placeholder:text-muted-foreground disabled:opacity-50"
+          <>
+            {inputMode === "text" ? (
+              <div className="border-t border-white/40 p-3">
+                {apiError && (
+                  <p className="mb-2 text-xs text-destructive" role="alert">{apiError}</p>
+                )}
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={textInputRef}
+                    type="text"
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    onKeyDown={handleTextKey}
+                    placeholder="Type your answer…"
+                    aria-label="Your answer"
+                    disabled={aiLoading}
+                    className="flex-1 rounded-xl border border-input bg-white/60 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 placeholder:text-muted-foreground disabled:opacity-50"
+                  />
+                  <Button
+                    size="icon"
+                    onClick={() => sendMessage(textInput)}
+                    disabled={!textInput.trim() || aiLoading}
+                    aria-label="Send"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <VoicePanel
+                listening={voiceInput.listening}
+                speaking={voiceSpeech.speaking}
+                transcript={voiceInput.transcript}
+                interim={voiceInput.interim}
+                inputError={voiceInput.error}
+                onStartListening={voiceInput.startListening}
+                onStopListening={voiceInput.stopListening}
+                onStopSpeaking={voiceSpeech.stop}
+                onSubmit={sendMessage}
+                onTranscriptChange={voiceInput.setTranscript}
+                disabled={aiLoading || !!emergency}
               />
-              <Button
-                size="icon"
-                onClick={() => sendMessage(input)}
-                disabled={!input.trim() || aiLoading}
-                aria-label="Send"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+            )}
+            {inputMode === "voice" && apiError && (
+              <p className="px-4 pb-2 text-xs text-destructive" role="alert">{apiError}</p>
+            )}
+          </>
         )}
       </GlassCard>
 
@@ -402,7 +626,7 @@ export default function AIAgentPage() {
             </div>
             <Button
               size="lg"
-              onClick={() => router.push("/patient/ai-agent/review")}
+              onClick={() => { voiceSpeech.stop(); router.push("/patient/ai-agent/review"); }}
               className="w-full sm:w-auto"
             >
               Review &amp; generate report
