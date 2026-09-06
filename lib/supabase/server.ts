@@ -3,9 +3,9 @@ import { cookies } from "next/headers";
 
 // Server client (anon key + the user's session cookie).
 // Used in Server Components and Route Handlers. RLS still applies.
-// NOTE: cookies() must be awaited in @supabase/ssr v0.5+
-export async function createClient() {
-  const cookieStore = await cookies();
+// Next.js 14: cookies() is synchronous.
+export function createClient() {
+  const cookieStore = cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

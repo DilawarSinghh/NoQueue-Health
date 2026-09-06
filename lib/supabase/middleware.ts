@@ -2,8 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Refreshes the Supabase session on every request and guards authenticated
-// areas (/agent, /patient, /onboarding). Role-based redirects happen in
-// /auth/callback and in each dashboard layout.
+// areas (/agent, /patient, /onboarding).
+// NOTE: middleware runs on the Edge runtime — cookies() is synchronous here
+// (via request/response objects directly, NOT the next/headers cookies()).
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -28,7 +29,7 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Do not run code between createServerClient and auth.getUser().
+  // IMPORTANT: Do not run any code between createServerClient and getUser()
   const {
     data: { user },
   } = await supabase.auth.getUser();
