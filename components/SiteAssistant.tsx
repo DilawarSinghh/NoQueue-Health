@@ -137,8 +137,8 @@ export function SiteAssistant() {
             animate={{ opacity: 1, y: 0,  scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.97 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="fixed bottom-20 right-4 z-50 flex w-[min(350px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-white/40 bg-white/80 shadow-2xl shadow-black/10 backdrop-blur-md"
-            style={{ height: "440px" }}
+            className="fixed right-4 z-50 flex w-[min(350px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-white/40 bg-white/80 shadow-2xl shadow-black/10 backdrop-blur-md"
+            style={{ height: "440px", bottom: "calc(5rem + env(safe-area-inset-bottom, 0px))" }}
             role="dialog"
             aria-label="NoQueue Health site assistant"
             aria-modal="false"
@@ -251,7 +251,8 @@ export function SiteAssistant() {
       {/* Floating trigger button */}
       <motion.button
         onClick={() => setOpen((o) => !o)}
-        className="fixed bottom-4 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-shadow hover:shadow-xl hover:shadow-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="fixed right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-shadow hover:shadow-xl hover:shadow-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        style={{ bottom: "max(1rem, env(safe-area-inset-bottom, 1rem))" }}
         aria-label={open ? "Close site assistant" : "Open site assistant"}
         whileTap={{ scale: 0.93 }}
       >

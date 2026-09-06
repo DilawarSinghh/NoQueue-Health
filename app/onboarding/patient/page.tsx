@@ -47,6 +47,15 @@ export default function PatientOnboardingPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Client-side validation
+    if (!fullName.trim()) {
+      setError("Please enter your full name.");
+      return;
+    }
+    if (!age || isNaN(Number(age)) || Number(age) < 1 || Number(age) > 120) {
+      setError("Please enter a valid age between 1 and 120.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
 

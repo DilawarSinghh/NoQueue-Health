@@ -189,6 +189,11 @@ export default function AgentProfilePage() {
     if (profErr || agentErr) {
       showToast((profErr ?? agentErr)!.message, "error");
     } else {
+      // Keep user_metadata in sync so the nav bar reflects the new name/avatar
+      // without requiring a sign-out/sign-in cycle.
+      await supabase.auth.updateUser({
+        data: { full_name: fullName.trim(), avatar_url: newAvatarUrl },
+      });
       showToast("Profile saved.", "success");
     }
   };

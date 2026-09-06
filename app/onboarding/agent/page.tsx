@@ -57,6 +57,14 @@ export default function AgentOnboardingPage() {
       setError("Please select a department.");
       return;
     }
+    if (!fullName.trim()) {
+      setError("Please enter your full name.");
+      return;
+    }
+    if (experienceYears && (isNaN(Number(experienceYears)) || Number(experienceYears) < 0 || Number(experienceYears) > 60)) {
+      setError("Years of experience must be between 0 and 60.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setWarning(null);

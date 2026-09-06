@@ -355,6 +355,7 @@ function AgentAgentsInner() {
   const [requests, setRequests]               = useState<PatientRequest[]>([]);
   const [loadingPosts, setLoadingPosts]       = useState(true);
   const [loadingRequests, setLoadingRequests] = useState(true);
+  const [requestsError, setRequestsError]     = useState<string | null>(null);
   const [defaultDept, setDefaultDept]         = useState("");
 
   const hasFetchedRequests = useRef(false);
@@ -392,14 +393,16 @@ function AgentAgentsInner() {
 
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
+      if (!user) { setLoadingRequests(false); return; }
 
-      const { data } = await supabase
+      try {
+      const { data, error } = await supabase
         .from("patient_requests")
         .select("id, department, price_offered, min_rating, notes, created_at, patient_id")
         .eq("active", true)
         .order("created_at", { ascending: false });
 
+      if (error) throw error;
       if (!data) { setLoadingRequests(false); return; }
 
       const ids = Array.from(new Set(data.map((r) => r.patient_id)));
@@ -418,7 +421,11 @@ function AgentAgentsInner() {
       })) as PatientRequest[];
 
       setRequests(enriched);
-      setLoadingRequests(false);
+      } catch (e: unknown) {
+        setRequestsError(e instanceof Error ? e.message : "Failed to load requests.");
+      } finally {
+        setLoadingRequests(false);
+      }
     });
   }, [tab]);
 
@@ -507,6 +514,12 @@ function AgentAgentsInner() {
           >
             {loadingRequests ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : requestsError ? (
+              <GlassCard className="p-4">
+                <p className="text-sm text-destructive" role="alert">
+                  Failed to load requests: {requestsError}
+                </p>
+              </GlassCard>
             ) : requests.length === 0 ? (
               <GlassCard className="flex flex-col items-center gap-3 py-12 text-center">
                 <Users className="h-10 w-10 text-muted-foreground/30" />

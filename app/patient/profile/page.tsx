@@ -181,6 +181,10 @@ export default function PatientProfilePage() {
     if (profErr || patErr) {
       showToast((profErr ?? patErr)!.message, "error");
     } else {
+      // Keep user_metadata in sync so the nav bar reflects changes immediately.
+      await supabase.auth.updateUser({
+        data: { full_name: fullName.trim(), avatar_url: newAvatarUrl },
+      });
       showToast("Profile saved.", "success");
     }
   };

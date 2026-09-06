@@ -62,13 +62,15 @@ export default function AgentDashboardPage() {
   const [profile, setProfile]   = useState<Profile | null>(null);
   const [stats, setStats]       = useState<Stats>({ activePosts: 0, pendingBookings: 0, unreadMessages: 0, rating: 0, ratingCount: 0 });
   const [loading, setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
 
     async function load() {
+      try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) { setLoading(false); return; }
 
       // Profile + agent details
       const { data: prof } = await supabase
@@ -129,8 +131,11 @@ export default function AgentDashboardPage() {
         rating:          ap?.agent_profiles?.rating      ?? 0,
         ratingCount:     ap?.agent_profiles?.rating_count ?? 0,
       });
-
-      setLoading(false);
+      } catch (e: unknown) {
+        setLoadError(e instanceof Error ? e.message : "Failed to load dashboard.");
+      } finally {
+        setLoading(false);
+      }
     }
 
     load();
@@ -138,6 +143,18 @@ export default function AgentDashboardPage() {
 
   const displayName = profile?.full_name ?? "Agent";
   const ap = profile?.agent_profiles;
+
+  if (loadError) {
+    return (
+      <div className="space-y-4 pt-4">
+        <GlassCard className="p-4">
+          <p className="text-sm text-destructive" role="alert">
+            Failed to load dashboard: {loadError}
+          </p>
+        </GlassCard>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

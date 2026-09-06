@@ -63,13 +63,15 @@ export default function PatientDashboardPage() {
   const [profile, setProfile]   = useState<PatientProfile | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
 
     async function load() {
+      try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) { setLoading(false); return; }
 
       const [profRes, bookRes] = await Promise.all([
         supabase
@@ -108,13 +110,29 @@ export default function PatientDashboardPage() {
       }
 
       if (bookRes.data) setBookings(bookRes.data as unknown as Booking[]);
-      setLoading(false);
+      } catch (e: unknown) {
+        setLoadError(e instanceof Error ? e.message : "Failed to load dashboard.");
+      } finally {
+        setLoading(false);
+      }
     }
 
     load();
   }, []);
 
   const pp = profile?.patient_profiles;
+
+  if (loadError) {
+    return (
+      <div className="pt-4">
+        <GlassCard className="p-4">
+          <p className="text-sm text-destructive" role="alert">
+            Failed to load dashboard: {loadError}
+          </p>
+        </GlassCard>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

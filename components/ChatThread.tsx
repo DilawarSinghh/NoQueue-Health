@@ -214,6 +214,13 @@ export function ChatThread({ threadId, currentUserId, peerName }: ChatThreadProp
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKey}
+            onFocus={() => {
+              // On mobile, the virtual keyboard pushes the viewport up.
+              // Scroll the input into view after the keyboard finishes opening.
+              setTimeout(() => {
+                inputRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+              }, 300);
+            }}
             placeholder="Type a message…"
             aria-label="Message input"
             className="flex-1 rounded-xl border border-input bg-white/60 px-4 py-2.5 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 placeholder:text-muted-foreground"
