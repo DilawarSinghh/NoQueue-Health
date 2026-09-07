@@ -223,6 +223,9 @@ export default function AIAgentPage() {
     patientContext, setPatientContext,
     data, setData,
     conversation, addMessage,
+    setRecommendedDepartment,
+    setRecommendedDepartmentReason,
+    setAlternateDepartment,
     reset,
   } = useIntakeStore();
 
@@ -355,7 +358,15 @@ export default function AIAgentPage() {
 
       if (reply) addMessage({ role: "assistant", content: reply });
 
-      if (json.isComplete) setIsComplete(true);
+      if (json.isComplete) {
+        // Save department recommendation to store before navigating to review
+        if (json.recommendedDepartment) {
+          setRecommendedDepartment(json.recommendedDepartment);
+          setRecommendedDepartmentReason(json.recommendedDepartmentReason ?? "");
+          setAlternateDepartment(json.alternateDepartment ?? null);
+        }
+        setIsComplete(true);
+      }
 
     } catch {
       setApiError("Network error — please check your connection and try again.");

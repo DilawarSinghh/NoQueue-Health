@@ -11,9 +11,11 @@ import { IntakePdfDocument, formatGeneratedAt } from "@/lib/pdfTemplate";
 
 // ─── Request schema ───────────────────────────────────────────────────────────
 const requestSchema = z.object({
-  intakeData:    intakeDataSchema,
-  patientName:   z.string().min(1),
-  patientId:     z.string().uuid(),
+  intakeData:                  intakeDataSchema,
+  patientName:                 z.string().min(1),
+  patientId:                   z.string().uuid(),
+  recommendedDepartment:       z.string().optional(),
+  recommendedDepartmentReason: z.string().optional(),
 });
 
 // ─── Groq — generate clinical summary ────────────────────────────────────────
@@ -88,7 +90,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { intakeData, patientName, patientId } = parsed.data;
+  const { intakeData, patientName, patientId, recommendedDepartment } = parsed.data;
 
   // Ensure the calling user owns this intake
   if (user.id !== patientId) {
@@ -105,10 +107,11 @@ export async function POST(request: Request) {
     // unknown to satisfy the strict type mismatch between pdf-renderer and React.
     const pdfBuffer = await renderToBuffer(
       createElement(IntakePdfDocument, {
-        data:            intakeData,
+        data:                   intakeData,
         clinicalSummary,
         patientName,
         generatedAt,
+        recommendedDepartment:  recommendedDepartment ?? intakeData.doctorOrDepartment,
       }) as unknown as Parameters<typeof renderToBuffer>[0]
     );
 

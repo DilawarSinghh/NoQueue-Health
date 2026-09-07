@@ -104,11 +104,13 @@ export function IntakePdfDocument({
   clinicalSummary,
   patientName,
   generatedAt,
+  recommendedDepartment,
 }: {
-  data:            IntakeData;
-  clinicalSummary: string;
-  patientName:     string;
-  generatedAt:     string;
+  data:                    IntakeData;
+  clinicalSummary:         string;
+  patientName:             string;
+  generatedAt:             string;
+  recommendedDepartment?:  string;
 }) {
   return (
     <Document
@@ -131,6 +133,21 @@ export function IntakePdfDocument({
         <Text style={styles.disclaimer}>
           Generated from patient self-report via AI intake. Not a diagnosis. For review by a licensed clinician.
         </Text>
+
+        {/* Suggested department — shown near top, before clinical summary */}
+        {recommendedDepartment && (
+          <>
+            <Text style={styles.sectionTitle}>Suggested Department (For Routing)</Text>
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ ...styles.value, fontFamily: "Helvetica-Bold" }}>
+                {recommendedDepartment}
+              </Text>
+              <Text style={{ ...styles.label, marginTop: 3 }}>
+                Patient-confirmed starting point for this visit. Not a diagnosis — the attending clinician may refer elsewhere after evaluation.
+              </Text>
+            </View>
+          </>
+        )}
 
         {/* Clinical summary */}
         <Text style={styles.sectionTitle}>Clinical Summary</Text>

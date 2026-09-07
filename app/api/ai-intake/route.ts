@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   emergencyResponseSchema,
   normalResponseSchema,
+  normalizeDepartment,
   type AIResponse,
   type IntakeDataPartial,
   type PatientContext,
@@ -11,6 +12,7 @@ import {
   INTAKE_FIELD_LABELS,
   REQUIRED_INTAKE_FIELDS,
 } from "@/lib/schema";
+import { DEPARTMENTS } from "@/lib/constants/hospital";
 
 // ─── Groq client (server-only) ────────────────────────────────────────────────
 function getGroq() {
@@ -43,6 +45,8 @@ function buildSystemPrompt(ctx: PatientContext): string {
 
   const required = REQUIRED_INTAKE_FIELDS.join(", ");
 
+  const deptList = DEPARTMENTS.join(", ");
+
   return `You are a clinical intake assistant for a hospital documentation platform.
 
 The patient's known background (DO NOT ask about any of this again):
@@ -66,7 +70,23 @@ Rules:
    - "nextQuestion": your next question in natural language, or null when done.
    - "isComplete": true ONLY when these required fields all have values: ${required}. When true, nextQuestion must be null.
 
-7. If the patient's message contains no useful intake information (greeting, off-topic, confusion), set updatedData to the existing data unchanged, ask the pending question again in nextQuestion, and set isComplete to false.`;
+7. If the patient's message contains no useful intake information (greeting, off-topic, confusion), set updatedData to the existing data unchanged, ask the pending question again in nextQuestion, and set isComplete to false.
+
+DEPARTMENT RECOMMENDATION (add ONLY when isComplete is true):
+Once you set isComplete to true, determine which ONE department from this fixed list is the most appropriate starting point for this patient's visit:
+${deptList}
+
+Rules for this recommendation:
+- This is a ROUTING suggestion — which specialist is best positioned to evaluate this complaint — NOT a diagnosis of what condition the patient has.
+- If symptoms are broad/unclear or could fit general internal medicine, default to "Medicine" rather than guessing a narrow specialty — it is always safer to under-specify than to confidently route to the wrong specialist.
+- If the patient is a child (age under 18), prefer "Paediatrics" as the entry point unless the complaint is clearly surgical/emergency in nature.
+- If the EMERGENCY RULE was triggered, do NOT include a department recommendation at all — emergency takes priority.
+- Always include a brief (1-2 sentence) plain-language reason for the recommendation, written for the patient to understand (e.g., "Based on your chest discomfort and shortness of breath, Cardiology is a good starting point for evaluation.") — NEVER state or imply a specific diagnosis in this reasoning.
+- If genuinely uncertain between two departments, include both: name the primary in recommendedDepartment and the secondary in alternateDepartment.
+- The department name MUST exactly match one of the values in the list above — do not paraphrase or abbreviate.
+
+When isComplete is true, extend your JSON with these fields:
+{"emergency":false,"updatedData":{...},"nextQuestion":null,"isComplete":true,"recommendedDepartment":"<exact dept name>","recommendedDepartmentReason":"<1-2 sentences for patient>","alternateDepartment":"<exact dept name or omit>"}`;
 }
 
 // ─── Request body schema ──────────────────────────────────────────────────────
@@ -103,7 +123,19 @@ function parseAIOutput(raw: string): AIResponse | null {
 
   // Normal path
   const norm = normalResponseSchema.safeParse(parsed);
-  if (norm.success) return norm.data;
+  if (norm.success) {
+    const result = norm.data;
+    // Normalise department fields if the intake is complete.
+    // The AI might return abbreviations or slight rewording — normalizeDepartment()
+    // fuzzy-matches against the fixed DEPARTMENTS list and falls back to "Medicine".
+    if (result.isComplete && result.recommendedDepartment) {
+      result.recommendedDepartment = normalizeDepartment(result.recommendedDepartment);
+      if (result.alternateDepartment) {
+        result.alternateDepartment = normalizeDepartment(result.alternateDepartment);
+      }
+    }
+    return result;
+  }
 
   return null;
 }

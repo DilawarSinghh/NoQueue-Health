@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   CheckCircle2,
+  Compass,
   Download,
   FileText,
   Loader2,
   RefreshCw,
+  Stethoscope,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { GlassCard } from "@/components/GlassCard";
@@ -16,6 +18,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useIntakeStore } from "@/lib/store";
 import {
   INTAKE_FIELD_ORDER,
@@ -24,23 +33,38 @@ import {
   isIntakeComplete,
   type IntakeDataPartial,
 } from "@/lib/schema";
+import { DEPARTMENTS } from "@/lib/constants/hospital";
 
 export default function ReviewPage() {
   const router = useRouter();
 
-  const { data, setData, patientContext, clinicalSummary, setClinicalSummary, pdfUrl, setPdfUrl, reset } =
-    useIntakeStore();
+  const {
+    data, setData,
+    patientContext,
+    clinicalSummary, setClinicalSummary,
+    pdfUrl, setPdfUrl,
+    recommendedDepartment,
+    recommendedDepartmentReason,
+    alternateDepartment,
+    reset,
+  } = useIntakeStore();
 
-  const [userId, setUserId]       = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted]   = useState(false);
-  const [error, setError]           = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<string, string>>>({});
+  const [userId, setUserId]             = useState<string | null>(null);
+  const [submitting, setSubmitting]     = useState(false);
+  const [submitted, setSubmitted]       = useState(false);
+  const [error, setError]               = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors]   = useState<Partial<Record<string, string>>>({});
+
+  // The patient-confirmed department — initialised to the AI recommendation,
+  // but the patient can override it via the Select on this screen.
+  // This value replaces doctorOrDepartment in the final submitted data.
+  const [confirmedDept, setConfirmedDept] = useState<string>(
+    recommendedDepartment ?? (data.doctorOrDepartment ?? "")
+  );
 
   // Redirect away if no intake data (e.g. direct URL access)
   useEffect(() => {
     if (!isIntakeComplete(data) && !submitted) {
-      // Give zustand a tick to rehydrate before redirecting
       const t = setTimeout(() => {
         if (!isIntakeComplete(data)) router.replace("/patient/ai-agent");
       }, 300);
@@ -48,13 +72,19 @@ export default function ReviewPage() {
     }
   }, [data, submitted, router]);
 
+  // Initialise confirmedDept once data/recommendation loads
+  useEffect(() => {
+    if (confirmedDept) return; // already set
+    if (recommendedDepartment) { setConfirmedDept(recommendedDepartment); return; }
+    if (data.doctorOrDepartment) setConfirmedDept(data.doctorOrDepartment);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendedDepartment, data.doctorOrDepartment]);
+
   // Get current user
   useEffect(() => {
-    createClient()
-      .auth.getUser()
-      .then(({ data: { user } }) => {
-        if (user) setUserId(user.id);
-      });
+    createClient().auth.getUser().then(({ data: { user } }) => {
+      if (user) setUserId(user.id);
+    });
   }, []);
 
   const updateField = (key: string, value: string) => {
@@ -67,7 +97,7 @@ export default function ReviewPage() {
   const validate = (): boolean => {
     const errors: Partial<Record<string, string>> = {};
     for (const key of REQUIRED_INTAKE_FIELDS) {
-      const val = data[key];
+      const val = key === "doctorOrDepartment" ? confirmedDept : data[key];
       if (!val || String(val).trim() === "") {
         errors[key] = "This field is required";
       }
@@ -77,9 +107,13 @@ export default function ReviewPage() {
   };
 
   const handleSubmit = async () => {
+    // Merge the confirmed department into data before validation + submission
+    const finalData: IntakeDataPartial = { ...data, doctorOrDepartment: confirmedDept };
+    setData(finalData);
+
     if (!validate()) return;
     if (!userId) { setError("Session expired — please sign in again."); return; }
-    if (!isIntakeComplete(data)) { setError("Please fill in all required fields."); return; }
+    if (!isIntakeComplete(finalData)) { setError("Please fill in all required fields."); return; }
 
     setSubmitting(true);
     setError(null);
@@ -89,9 +123,12 @@ export default function ReviewPage() {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          intakeData:  data,
+          intakeData:  finalData,
           patientName: patientContext?.name ?? "Patient",
           patientId:   userId,
+          // Pass through for the PDF — the generate-report route will embed it
+          recommendedDepartment:       confirmedDept,
+          recommendedDepartmentReason: recommendedDepartmentReason ?? "",
         }),
       });
 
@@ -113,7 +150,7 @@ export default function ReviewPage() {
     setSubmitting(false);
   };
 
-  // ── Success screen ────────────────────────────────────────────────────────
+  // ── Success screen ─────────────────────────────────────────────────────────
   if (submitted && pdfUrl) {
     return (
       <div className="mx-auto max-w-xl">
@@ -139,6 +176,30 @@ export default function ReviewPage() {
                 <p className="whitespace-pre-wrap text-sm text-foreground leading-relaxed">
                   {clinicalSummary}
                 </p>
+              </div>
+            )}
+
+            {/* Handoff to hospital agents — soft, optional CTA */}
+            {confirmedDept && (
+              <div className="w-full rounded-xl border border-primary/20 bg-primary/5 p-4 text-left">
+                <p className="mb-1 text-sm font-medium">Need help with paperwork for this visit?</p>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Browse documentation agents in the{" "}
+                  <span className="font-medium text-primary">{confirmedDept}</span>{" "}
+                  department at Safdarjung Hospital.
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => {
+                    const params = new URLSearchParams({ department: confirmedDept });
+                    router.push(`/patient/hospital-agents?${params}`);
+                  }}
+                >
+                  <Stethoscope className="h-4 w-4" aria-hidden="true" />
+                  Browse {confirmedDept} agents
+                </Button>
               </div>
             )}
 
@@ -172,7 +233,7 @@ export default function ReviewPage() {
     );
   }
 
-  // ── Review + edit screen ──────────────────────────────────────────────────
+  // ── Review + edit screen ───────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <motion.div
@@ -193,15 +254,76 @@ export default function ReviewPage() {
         </div>
       </motion.div>
 
-      {/* Editable fields */}
+      {/* ── Department recommendation card — shown first, most important ── */}
+      {(recommendedDepartment || confirmedDept) && (
+        <GlassCard className="border border-primary/30 bg-primary/5 p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <Compass className="h-5 w-5 text-primary" aria-hidden="true" />
+            <h2 className="font-semibold text-primary">Suggested Department</h2>
+          </div>
+
+          {/* Primary recommendation + reason */}
+          <p className="text-lg font-semibold">{confirmedDept || recommendedDepartment}</p>
+          {recommendedDepartmentReason && (
+            <p className="mt-1 text-sm text-muted-foreground">{recommendedDepartmentReason}</p>
+          )}
+
+          {/* Alternate suggestion */}
+          {alternateDepartment && (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Or possibly:{" "}
+              <span className="font-medium text-foreground">{alternateDepartment}</span>
+            </p>
+          )}
+
+          {/* Patient override — pre-filled with AI suggestion */}
+          <div className="mt-4 grid gap-2">
+            <Label htmlFor="dept-override" className="text-sm">
+              Change department if needed
+            </Label>
+            <Select
+              value={confirmedDept}
+              onValueChange={(v) => {
+                setConfirmedDept(v);
+                // Keep doctorOrDepartment in the structured data in sync
+                updateField("doctorOrDepartment", v);
+              }}
+            >
+              <SelectTrigger id="dept-override">
+                <SelectValue placeholder="Select department…" />
+              </SelectTrigger>
+              <SelectContent>
+                {DEPARTMENTS.map((dept) => (
+                  <SelectItem key={dept} value={dept}>
+                    {dept}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Triage disclaimer */}
+          <p className="mt-3 text-xs text-muted-foreground">
+            This is a suggested starting point based on what you&apos;ve described, not a diagnosis.
+            The doctor you see may refer you elsewhere after evaluation.
+          </p>
+        </GlassCard>
+      )}
+
+      {/* ── Editable structured fields ──────────────────────────────────── */}
       <GlassCard className="p-6">
         <h2 className="mb-4 font-semibold">Intake information</h2>
         <div className="grid gap-4">
           {INTAKE_FIELD_ORDER.map((key) => {
             const isRequired = REQUIRED_INTAKE_FIELDS.includes(key as typeof REQUIRED_INTAKE_FIELDS[number]);
-            const val        = String(data[key] ?? "");
-            const err        = fieldErrors[key];
-            const isLong     = val.length > 80 || key === "associatedSymptoms" || key === "priorEpisodes" || key === "medicationsTried";
+            // doctorOrDepartment is managed by the department Select above — hide from
+            // the raw fields list to avoid duplicate/confusing editing surface.
+            if (key === "doctorOrDepartment" && (recommendedDepartment || confirmedDept)) {
+              return null;
+            }
+            const val    = String(data[key] ?? "");
+            const err    = fieldErrors[key];
+            const isLong = val.length > 80 || key === "associatedSymptoms" || key === "priorEpisodes" || key === "medicationsTried";
 
             return (
               <div key={key} className="grid gap-1.5">
@@ -234,16 +356,16 @@ export default function ReviewPage() {
         </div>
       </GlassCard>
 
-      {/* Pre-filled context summary */}
+      {/* ── Patient background ───────────────────────────────────────────── */}
       {patientContext && (
         <GlassCard className="p-5">
           <h2 className="mb-3 font-semibold">Patient background</h2>
           <dl className="grid gap-2 sm:grid-cols-2">
             {[
-              ["Name",             patientContext.name],
-              ["Age",              patientContext.age  ? `${patientContext.age} years` : null],
-              ["Gender",           patientContext.gender],
-              ["Allergies",        patientContext.allergies],
+              ["Name",              patientContext.name],
+              ["Age",               patientContext.age  ? `${patientContext.age} years` : null],
+              ["Gender",            patientContext.gender],
+              ["Allergies",         patientContext.allergies],
               ["Chronic conditions", patientContext.chronicConditions],
             ]
               .filter(([, v]) => v)
@@ -257,14 +379,14 @@ export default function ReviewPage() {
         </GlassCard>
       )}
 
-      {/* Error */}
+      {/* ── Error ────────────────────────────────────────────────────────── */}
       {error && (
         <GlassCard className="border-destructive/30 bg-destructive/5 p-4">
           <p className="text-sm text-destructive" role="alert">{error}</p>
         </GlassCard>
       )}
 
-      {/* Submit */}
+      {/* ── Submit ───────────────────────────────────────────────────────── */}
       <GlassCard className="p-5">
         <p className="mb-4 text-sm text-muted-foreground">
           By confirming, you agree to send this intake summary to the clinic. The
