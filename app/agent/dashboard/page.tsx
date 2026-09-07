@@ -26,7 +26,6 @@ interface Profile {
   full_name: string | null;
   avatar_url: string | null;
   agent_profiles: {
-    hospital: string | null;
     department: string | null;
     experience_years: number | null;
     rating: number;
@@ -75,7 +74,7 @@ export default function AgentDashboardPage() {
       // Profile + agent details
       const { data: prof } = await supabase
         .from("profiles")
-        .select("full_name, avatar_url, agent_profiles(hospital, department, experience_years, rating, rating_count)")
+        .select("full_name, avatar_url, agent_profiles(department, experience_years, rating, rating_count)")
         .eq("id", user.id)
         .maybeSingle();
 
@@ -184,8 +183,8 @@ export default function AgentDashboardPage() {
             </h1>
             {ap && (
               <p className="mt-0.5 truncate text-sm text-muted-foreground">
-                {[ap.department, ap.hospital].filter(Boolean).join(" · ")}
-                {ap.experience_years != null && ` · ${ap.experience_years} yr${ap.experience_years !== 1 ? "s" : ""} exp`}
+                {ap.department ?? ""}
+                {ap.experience_years != null && `${ap.department ? " · " : ""}${ap.experience_years} yr${ap.experience_years !== 1 ? "s" : ""} exp`}
               </p>
             )}
           </div>

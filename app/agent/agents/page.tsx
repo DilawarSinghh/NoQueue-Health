@@ -63,6 +63,14 @@ function CreatePostForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!title.trim()) {
+      setError("Please enter a title.");
+      return;
+    }
+    if (title.trim().length > 120) {
+      setError("Title must be 120 characters or fewer.");
+      return;
+    }
     if (!price || isNaN(Number(price)) || Number(price) <= 0) {
       setError("Please enter a valid price.");
       return;
@@ -191,16 +199,26 @@ function CreatePostForm({
 function PostCard({
   post,
   onDeactivate,
+  onError,
 }: {
   post: AgentPost;
   onDeactivate: (id: string) => void;
+  onError: (msg: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
 
   const deactivate = async () => {
     setBusy(true);
     const supabase = createClient();
-    await supabase.from("agent_posts").update({ active: false }).eq("id", post.id);
+    const { error } = await supabase
+      .from("agent_posts")
+      .update({ active: false })
+      .eq("id", post.id);
+    if (error) {
+      onError("Failed to remove post: " + error.message);
+      setBusy(false);
+      return;
+    }
     onDeactivate(post.id);
     setBusy(false);
   };
@@ -354,35 +372,49 @@ function AgentAgentsInner() {
   const [posts, setPosts]                     = useState<AgentPost[]>([]);
   const [requests, setRequests]               = useState<PatientRequest[]>([]);
   const [loadingPosts, setLoadingPosts]       = useState(true);
+  const [postsError, setPostsError]           = useState<string | null>(null);
   const [loadingRequests, setLoadingRequests] = useState(true);
   const [requestsError, setRequestsError]     = useState<string | null>(null);
   const [defaultDept, setDefaultDept]         = useState("");
+  const [actionError, setActionError]         = useState<string | null>(null);
 
   const hasFetchedRequests = useRef(false);
+
+  // Reset the lazy-fetch flag when department changes so requests are re-filtered
+  useEffect(() => {
+    hasFetchedRequests.current = false;
+    setRequests([]);
+    setRequestsError(null);
+    setLoadingRequests(true);
+  }, [defaultDept]);
 
   // Load own posts + department from profile
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
-
-      const [postsRes, profRes] = await Promise.all([
-        supabase
-          .from("agent_posts")
-          .select("*")
-          .eq("agent_id", user.id)
-          .eq("active", true)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("agent_profiles")
-          .select("department")
-          .eq("user_id", user.id)
-          .maybeSingle(),
-      ]);
-
-      if (postsRes.data)  setPosts(postsRes.data as AgentPost[]);
-      if (profRes.data)   setDefaultDept(profRes.data.department ?? "");
-      setLoadingPosts(false);
+      if (!user) { setLoadingPosts(false); return; }
+      try {
+        const [postsRes, profRes] = await Promise.all([
+          supabase
+            .from("agent_posts")
+            .select("*")
+            .eq("agent_id", user.id)
+            .eq("active", true)
+            .order("created_at", { ascending: false }),
+          supabase
+            .from("agent_profiles")
+            .select("department")
+            .eq("user_id", user.id)
+            .maybeSingle(),
+        ]);
+        if (postsRes.data)  setPosts(postsRes.data as AgentPost[]);
+        if (profRes.data)   setDefaultDept(profRes.data.department ?? "");
+        if (postsRes.error) throw postsRes.error;
+      } catch (e: unknown) {
+        setPostsError(e instanceof Error ? e.message : "Failed to load posts.");
+      } finally {
+        setLoadingPosts(false);
+      }
     });
   }, []);
 
@@ -400,12 +432,22 @@ function AgentAgentsInner() {
         .from("patient_requests")
         .select("id, department, price_offered, min_rating, notes, created_at, patient_id")
         .eq("active", true)
+        // Only show requests matching this agent's department (or all if dept unknown)
         .order("created_at", { ascending: false });
+
+      // Client-side filter by department — requests with no department set are
+      // shown to all agents (they're general requests); requests with a specific
+      // department only shown to matching agents.
+      const filtered = defaultDept
+        ? (data ?? []).filter((r) => !r.department || r.department === defaultDept)
+        : (data ?? []);
 
       if (error) throw error;
       if (!data) { setLoadingRequests(false); return; }
 
-      const ids = Array.from(new Set(data.map((r) => r.patient_id)));
+      const ids = Array.from(new Set(filtered.map((r) => r.patient_id)));
+      if (ids.length === 0) { setLoadingRequests(false); return; }
+
       const { data: profiles } = await supabase
         .from("profiles")
         .select("id, full_name, avatar_url")
@@ -415,7 +457,7 @@ function AgentAgentsInner() {
         (profiles ?? []).map((p) => [p.id, p])
       );
 
-      const enriched = data.map((r) => ({
+      const enriched = filtered.map((r) => ({
         ...r,
         profiles: profileMap[r.patient_id] ?? null,
       })) as PatientRequest[];
@@ -427,7 +469,7 @@ function AgentAgentsInner() {
         setLoadingRequests(false);
       }
     });
-  }, [tab]);
+  }, [tab, defaultDept]);
 
   return (
     <div className="space-y-6">
@@ -469,6 +511,11 @@ function AgentAgentsInner() {
       </div>
 
       {/* Content */}
+      {actionError && (
+        <GlassCard className="p-4">
+          <p className="text-sm text-destructive" role="alert">{actionError}</p>
+        </GlassCard>
+      )}
       <AnimatePresence mode="wait">
         {tab === "posts" ? (
           <motion.div
@@ -481,6 +528,12 @@ function AgentAgentsInner() {
           >
             {loadingPosts ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : postsError ? (
+              <GlassCard className="p-4">
+                <p className="text-sm text-destructive" role="alert">
+                  Failed to load posts: {postsError}
+                </p>
+              </GlassCard>
             ) : posts.length === 0 ? (
               <GlassCard className="flex flex-col items-center gap-3 py-12 text-center">
                 <BriefcaseMedical className="h-10 w-10 text-muted-foreground/30" />
@@ -499,6 +552,7 @@ function AgentAgentsInner() {
                   onDeactivate={(id) =>
                     setPosts((prev) => prev.filter((x) => x.id !== id))
                   }
+                  onError={(msg) => setActionError(msg)}
                 />
               ))
             )}
