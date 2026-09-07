@@ -1,13 +1,46 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { BriefcaseMedical, HeartPulse } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { GlassCard } from "@/components/GlassCard";
 import { Logo } from "@/components/Logo";
 
 export default function RoleSelectionPage() {
   const router = useRouter();
+  const [checking, setChecking] = useState(true);
+
+  // Redirect already-onboarded users before showing the form.
+  // Middleware handles unauthenticated access — this handles the case where
+  // someone navigates here directly while already having a profile.
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setChecking(false); return; } // middleware already handles this
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profile?.role === "agent")   { router.replace("/agent/dashboard");   return; }
+      if (profile?.role === "patient") { router.replace("/patient/dashboard"); return; }
+
+      // No profile yet — this is a genuinely new user, show the form
+      setChecking(false);
+    });
+  }, [router]);
+
+  if (checking) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center p-4">
+        <p className="text-muted-foreground">Loading…</p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col justify-center p-4">
