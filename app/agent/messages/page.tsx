@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageSquare, User } from "lucide-react";
@@ -8,19 +8,19 @@ import { createClient } from "@/lib/supabase/client";
 import { GlassCard } from "@/components/GlassCard";
 import { ChatThread } from "@/components/ChatThread";
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 interface ThreadSummary {
   id: string;
   participant_a: string;
   participant_b: string;
-  created_at: string;
-  peer: {
-    id: string;
-    full_name: string | null;
-    avatar_url: string | null;
-  } | null;
+  peer: { id: string; full_name: string | null; avatar_url: string | null } | null;
   lastMessage: string | null;
   lastAt: string | null;
+  hasUnread: boolean;
 }
+
+// ─── Inner component ──────────────────────────────────────────────────────────
 
 function AgentMessagesInner() {
   const router       = useRouter();
@@ -33,56 +33,61 @@ function AgentMessagesInner() {
   const [loading, setLoading]       = useState(true);
   const [loadError, setLoadError]   = useState<string | null>(null);
 
+  const showChat = activeId !== null;
+
   const loadThreads = useCallback(async (uid: string) => {
     const supabase = createClient();
 
-    const { data, error } = await supabase
+    const { data: threadRows, error } = await supabase
       .from("threads")
-      .select("id, participant_a, participant_b, created_at")
+      .select("id, participant_a, participant_b")
       .eq("type", "agent_patient")
-      .or(`participant_a.eq.${uid},participant_b.eq.${uid}`)
-      .order("created_at", { ascending: false });
+      .or(`participant_a.eq.${uid},participant_b.eq.${uid}`);
 
     if (error) { setLoadError(error.message); setLoading(false); return; }
-    if (!data || data.length === 0) { setLoading(false); return; }
+    if (!threadRows || threadRows.length === 0) { setLoading(false); return; }
 
-    // Gather peer IDs (the participant that isn't us)
-    const peerIds = data.map((t) =>
+    const peerIds = threadRows.map((t) =>
       t.participant_a === uid ? t.participant_b : t.participant_a
     );
-    const uniquePeerIds = Array.from(new Set(peerIds));
-
     const { data: profiles } = await supabase
       .from("profiles")
       .select("id, full_name, avatar_url")
-      .in("id", uniquePeerIds);
+      .in("id", Array.from(new Set(peerIds)));
+    const profileMap = Object.fromEntries((profiles ?? []).map((p) => [p.id, p]));
 
-    const profileMap = Object.fromEntries(
-      (profiles ?? []).map((p) => [p.id, p])
-    );
-
-    // Last message per thread
-    const threadIds = data.map((t) => t.id);
+    const threadIds = threadRows.map((t) => t.id);
     const { data: lastMsgs } = await supabase
       .from("messages")
-      .select("thread_id, content, created_at")
+      .select("thread_id, content, created_at, sender_id")
       .in("thread_id", threadIds)
       .order("created_at", { ascending: false });
 
-    const lastMap: Record<string, { content: string; created_at: string }> = {};
+    const lastMap: Record<string, { content: string; created_at: string; sender_id: string | null }> = {};
     for (const m of lastMsgs ?? []) {
       if (!lastMap[m.thread_id]) lastMap[m.thread_id] = m;
     }
 
-    const summaries: ThreadSummary[] = data.map((t) => {
-      const peerId = t.participant_a === uid ? t.participant_b : t.participant_a;
-      return {
-        ...t,
-        peer:        profileMap[peerId] ?? null,
-        lastMessage: lastMap[t.id]?.content ?? null,
-        lastAt:      lastMap[t.id]?.created_at ?? null,
-      };
-    });
+    const summaries: ThreadSummary[] = threadRows
+      .map((t) => {
+        const peerId = t.participant_a === uid ? t.participant_b : t.participant_a;
+        const last   = lastMap[t.id] ?? null;
+        return {
+          id:            t.id,
+          participant_a: t.participant_a,
+          participant_b: t.participant_b,
+          peer:          profileMap[peerId] ?? null,
+          lastMessage:   last?.content ?? null,
+          lastAt:        last?.created_at ?? null,
+          hasUnread:     !!last && last.sender_id !== uid,
+        };
+      })
+      .sort((a, b) => {
+        if (!a.lastAt && !b.lastAt) return 0;
+        if (!a.lastAt) return 1;
+        if (!b.lastAt) return -1;
+        return new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime();
+      });
 
     setThreads(summaries);
     setLoading(false);
@@ -97,17 +102,51 @@ function AgentMessagesInner() {
     });
   }, [loadThreads, router]);
 
-  // Keep URL in sync with selected thread
+  // Realtime thread list updates
+  const userIdRef = useRef<string | null>(null);
+  useEffect(() => { userIdRef.current = userId; }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    const channel  = supabase
+      .channel(`messages:agent:${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const msg = payload.new as { thread_id: string; content: string; created_at: string; sender_id: string | null };
+          setThreads((prev) => {
+            const idx = prev.findIndex((t) => t.id === msg.thread_id);
+            if (idx === -1) return prev;
+            const updated: ThreadSummary = {
+              ...prev[idx],
+              lastMessage: msg.content,
+              lastAt:      msg.created_at,
+              hasUnread:   msg.sender_id !== userIdRef.current,
+            };
+            const rest = prev.filter((_, i) => i !== idx);
+            return [updated, ...rest];
+          });
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [userId]);
+
   const selectThread = (id: string) => {
     setActiveId(id);
+    setThreads((prev) =>
+      prev.map((t) => t.id === id ? { ...t, hasUnread: false } : t)
+    );
     router.replace(`/agent/messages?thread=${id}`, { scroll: false });
   };
 
   const activeThread = threads.find((t) => t.id === activeId) ?? null;
 
   return (
-    <div className="space-y-4">
-      <div>
+    <div className="flex h-[calc(100dvh-80px)] flex-col gap-4 md:h-auto md:space-y-4">
+      <div className={showChat ? "hidden md:block" : ""}>
         <h1 className="text-2xl font-semibold tracking-tight">Messages</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
           Direct messages with patients.
@@ -122,13 +161,21 @@ function AgentMessagesInner() {
         </GlassCard>
       )}
 
-      <div className="grid gap-4 md:grid-cols-[280px_1fr]">
+      <div className="flex flex-1 gap-4 md:grid md:grid-cols-[280px_1fr]">
         {/* Thread list */}
-        <GlassCard className="h-[calc(100dvh-220px)] overflow-y-auto p-0">
+        <GlassCard
+          className={`h-full overflow-y-auto p-0 md:h-[calc(100dvh-220px)] ${
+            showChat ? "hidden md:block" : "w-full"
+          }`}
+        >
           {loading ? (
-            <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+            <div className="space-y-1 p-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-16 animate-pulse rounded-xl bg-muted/30" />
+              ))}
+            </div>
           ) : threads.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center px-4">
+            <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
               <MessageSquare className="h-10 w-10 text-muted-foreground/30" />
               <p className="text-sm text-muted-foreground">No conversations yet.</p>
             </div>
@@ -151,27 +198,31 @@ function AgentMessagesInner() {
                       />
                     ) : (
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                        <User className="h-5 w-5" />
+                        <User className="h-5 w-5" aria-hidden="true" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium">
+                      <p className={`truncate ${t.hasUnread ? "font-semibold" : "font-medium"}`}>
                         {t.peer?.full_name ?? "Patient"}
                       </p>
                       {t.lastMessage && (
-                        <p className="truncate text-xs text-muted-foreground">
+                        <p className={`truncate text-xs ${t.hasUnread ? "text-foreground" : "text-muted-foreground"}`}>
                           {t.lastMessage}
                         </p>
                       )}
                     </div>
-                    {t.lastAt && (
-                      <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {new Date(t.lastAt).toLocaleDateString("en-IN", {
-                          day: "numeric",
-                          month: "short",
-                        })}
-                      </span>
-                    )}
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {t.lastAt && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(t.lastAt).toLocaleDateString("en-IN", {
+                            day: "numeric", month: "short",
+                          })}
+                        </span>
+                      )}
+                      {t.hasUnread && (
+                        <span className="h-2 w-2 rounded-full bg-primary" aria-label="Unread" />
+                      )}
+                    </div>
                   </button>
                 </li>
               ))}
@@ -180,7 +231,11 @@ function AgentMessagesInner() {
         </GlassCard>
 
         {/* Chat panel */}
-        <GlassCard className="h-[calc(100dvh-220px)] overflow-hidden p-0">
+        <GlassCard
+          className={`overflow-hidden p-0 md:h-[calc(100dvh-220px)] ${
+            showChat ? "flex flex-1 flex-col" : "hidden md:block"
+          }`}
+        >
           <AnimatePresence mode="wait">
             {activeId && userId ? (
               <motion.div
@@ -195,6 +250,11 @@ function AgentMessagesInner() {
                   threadId={activeId}
                   currentUserId={userId}
                   peerName={activeThread?.peer?.full_name ?? "Patient"}
+                  peerAvatar={activeThread?.peer?.avatar_url ?? null}
+                  onBack={() => {
+                    setActiveId(null);
+                    router.replace("/agent/messages", { scroll: false });
+                  }}
                 />
               </motion.div>
             ) : (
@@ -202,7 +262,7 @@ function AgentMessagesInner() {
                 key="empty"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="flex h-full flex-col items-center justify-center gap-3 text-center p-6"
+                className="hidden h-full flex-col items-center justify-center gap-3 p-6 text-center md:flex"
               >
                 <MessageSquare className="h-12 w-12 text-muted-foreground/20" />
                 <p className="text-muted-foreground">
