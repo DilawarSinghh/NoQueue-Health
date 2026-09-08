@@ -85,11 +85,20 @@ export async function runLowTier(body: IntakeRequest): Promise<NextResponse> {
 
       lastError = "Malformed AI response after retry";
     } catch (err: unknown) {
-      lastError = err instanceof Error ? err.message : "Unknown Groq error";
+      const errMsg = err instanceof Error ? err.message : "Unknown Groq error";
+      const statusCode =
+        err != null && typeof err === "object" && "status" in err
+          ? (err as { status?: number }).status
+          : undefined;
+      console.error(
+        `[ai-intake/low] Groq model ${model} failed${statusCode ? ` (HTTP ${statusCode})` : ""}: ${errMsg}`
+      );
+      lastError = statusCode ? `HTTP ${statusCode} — ${errMsg}` : errMsg;
       continue;
     }
   }
 
+  console.error(`[ai-intake/low] All models failed. Last error: ${lastError}`);
   return NextResponse.json({ error: lastError }, { status: 502 });
 }
 

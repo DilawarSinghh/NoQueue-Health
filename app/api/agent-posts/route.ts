@@ -58,6 +58,7 @@ export async function GET(request: Request) {
   const { data, count, error } = await query;
 
   if (error) {
+    console.error(`[agent-posts] Supabase error: ${error.message}${error.details ? ` | Details: ${error.details}` : ""}${error.hint ? ` | Hint: ${error.hint}` : ""}`);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
