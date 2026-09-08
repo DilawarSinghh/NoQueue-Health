@@ -269,7 +269,8 @@ create policy "notifications_update_own" on notifications for update using (user
 -- ---------------------------------------------------------------------------
 create index if not exists idx_agent_posts_active      on agent_posts (active) where active = true;
 create index if not exists idx_agent_posts_agent       on agent_posts (agent_id);
-create index if not exists idx_agent_posts_dept_hosp   on agent_posts (department, hospital);
+-- NOTE: no (department, hospital) index here — 0002 removes the hospital
+-- column and creates idx_agent_posts_dept instead.
 create index if not exists idx_patient_requests_active on patient_requests (active) where active = true;
 create index if not exists idx_patient_requests_patient on patient_requests (patient_id);
 create index if not exists idx_bookings_agent          on bookings (agent_id);

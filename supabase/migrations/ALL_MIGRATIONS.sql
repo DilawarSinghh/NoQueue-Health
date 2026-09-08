@@ -1,9 +1,9 @@
 ﻿-- ============================================================================
 -- ALL_MIGRATIONS.sql — NoQueue Health (Scriba) — full database setup
 --
--- ⚠️  RUN THIS ONCE, IN ORDER, IN THE SUPABASE SQL EDITOR.
+-- RUN THIS ONCE, IN ORDER, IN THE SUPABASE SQL EDITOR.
 --
--- This file concatenates migrations 0001 → 0006 in the correct order so you
+-- This file concatenates migrations 0001 -> 0006 in the correct order so you
 -- can set up the entire database in a single run without version mismatch:
 --
 --   0001  Initial schema (tables, RLS, triggers, indexes, buckets)
@@ -13,10 +13,10 @@
 --   0005  intake_records: tier / fallback_occurred / recommended_department
 --   0006  Widens tier check to provider IDs (minimax-m3, gemini, groq)
 --
--- ⚠️  WARNING: 0001 DROPS the old intake_records table (cascade) and replaces
+-- WARNING: 0001 DROPS the old intake_records table (cascade) and replaces
 --     it. Running this on a database with real intake data will DESTROY that
 --     data. For production upgrades, run the individual numbered migrations
---     you haven't applied yet instead of this file.
+--     you have not applied yet instead of this file.
 --
 -- All statements are guarded (IF EXISTS / IF NOT EXISTS / drop-then-add
 -- constraints), so re-running the whole file is safe apart from the 0001
@@ -299,7 +299,8 @@ create policy "notifications_update_own" on notifications for update using (user
 -- ---------------------------------------------------------------------------
 create index if not exists idx_agent_posts_active      on agent_posts (active) where active = true;
 create index if not exists idx_agent_posts_agent       on agent_posts (agent_id);
-create index if not exists idx_agent_posts_dept_hosp   on agent_posts (department, hospital);
+-- NOTE: no (department, hospital) index here — 0002 removes the hospital
+-- column and creates idx_agent_posts_dept instead.
 create index if not exists idx_patient_requests_active on patient_requests (active) where active = true;
 create index if not exists idx_patient_requests_patient on patient_requests (patient_id);
 create index if not exists idx_bookings_agent          on bookings (agent_id);
