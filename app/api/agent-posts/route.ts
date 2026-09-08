@@ -84,7 +84,7 @@ export async function GET(request: Request) {
   };
 
   const shaped = (data ?? []).map((row) => {
-    const r = row as { profiles?: NestedProfile | NestedProfile[] | null } & Record<string, unknown>;
+    const r = row as unknown as { profiles?: NestedProfile | NestedProfile[] | null } & Record<string, unknown>;
     const p = Array.isArray(r.profiles) ? r.profiles[0] ?? null : r.profiles ?? null;
     const { profiles: _nested, ...post } = r;
     return {
