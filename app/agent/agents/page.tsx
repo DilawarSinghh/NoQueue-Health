@@ -37,6 +37,7 @@ interface AgentPost {
 
 interface PatientRequest {
   id: string;
+  patient_id: string;
   department: string | null;
   price_offered: number | null;
   min_rating: number;
@@ -278,13 +279,18 @@ function RequestCard({ req }: { req: PatientRequest }) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setError("Session expired."); setBusy(false); return; }
 
+    // req.patient_id is the patient's profile UUID — NOT req.id which is the
+    // patient_requests row PK. Using req.id here would try to store a request
+    // row UUID as a FK into profiles.id, causing a constraint violation.
+    const patientUserId = req.patient_id;
+
     const { data: existing } = await supabase
       .from("threads")
       .select("id")
       .eq("type", "agent_patient")
       .or(
-        `and(participant_a.eq.${user.id},participant_b.eq.${req.id}),` +
-        `and(participant_a.eq.${req.id},participant_b.eq.${user.id})`
+        `and(participant_a.eq.${user.id},participant_b.eq.${patientUserId}),` +
+        `and(participant_a.eq.${patientUserId},participant_b.eq.${user.id})`
       )
       .maybeSingle();
 
@@ -298,7 +304,7 @@ function RequestCard({ req }: { req: PatientRequest }) {
       .insert({
         type:          "agent_patient",
         participant_a: user.id,
-        participant_b: req.id,
+        participant_b: patientUserId,
       })
       .select("id")
       .single();
