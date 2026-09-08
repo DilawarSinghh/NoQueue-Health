@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Bot,
   CalendarCheck,
+  FileText,
   LayoutDashboard,
   LogOut,
   MessageSquare,
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { href: "/patient/hospital-agents", label: "Agents",          icon: Stethoscope    },
   { href: "/patient/bookings",        label: "Bookings",        icon: CalendarCheck  },
   { href: "/patient/ai-agent",        label: "AI Agent",        icon: Bot            },
+  { href: "/patient/documentation",   label: "Documentation",   icon: FileText        },
   { href: "/patient/messages",        label: "Messages",        icon: MessageSquare  },
 ];
 
