@@ -37,14 +37,19 @@ async function runHighTier(body: IntakeRequest): Promise<NextResponse> {
   if (!process.env.KIMI_API_KEY) {
     // No key configured — fall back immediately with a clear notice
     console.warn("[ai-intake/high] KIMI_API_KEY not set — falling back to Low tier");
-    const fallbackRes = await runLowTier(body);
-    const fallbackJson = await fallbackRes.json();
+    const fallbackRes  = await runLowTier(body);
+    const fallbackJson = (await fallbackRes.json()) as Record<string, unknown>;
+    const fallbackAlsoFailed = "error" in fallbackJson;
+
+    const fallbackNotice = fallbackAlsoFailed
+      ? "Our advanced assistant (Kimi K3) is not configured on this server, and our standard assistant was also unavailable. Please try again in a moment."
+      : "Our advanced assistant (Kimi K3) is not configured on this server, so we've switched you to our standard assistant to keep things moving." +
+        (body.language === "hi" ? " Further responses will be in English." : "");
+
     return NextResponse.json({
       ...fallbackJson,
       fallbackOccurred: true,
-      fallbackNotice:
-        "Our advanced assistant (Kimi K3) is not configured on this server, so we've switched you to our standard assistant to keep things moving." +
-        (body.language === "hi" ? " Further responses will be in English." : ""),
+      fallbackNotice,
     });
   }
 
@@ -120,16 +125,21 @@ async function runHighTier(body: IntakeRequest): Promise<NextResponse> {
     ? kimiErrorReason.slice(0, 120) + "…"
     : kimiErrorReason;
 
+  const fallbackAlsoFailed = "error" in fallbackJson;
+
   const hindiNote =
     body.language === "hi"
       ? " Further responses will be in English because our standard assistant does not support Hindi."
       : "";
 
+  const fallbackNotice = fallbackAlsoFailed
+    ? `Our advanced assistant (Kimi K3) hit an error (${shortReason}), and our standard assistant was also unavailable. Please try again in a moment.`
+    : `Our advanced assistant (Kimi K3) hit an error (${shortReason}), so we've switched you to our standard assistant to keep things moving.${hindiNote}`;
+
   return NextResponse.json({
     ...fallbackJson,
     fallbackOccurred: true,
-    fallbackNotice:
-      `Our advanced assistant (Kimi K3) hit an error (${shortReason}), so we've switched you to our standard assistant to keep things moving.${hindiNote}`,
+    fallbackNotice,
   });
 }
 
