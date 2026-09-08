@@ -44,6 +44,29 @@ function apiEndpoint(tier: IntakeTier): string {
   return tier === "high" ? "/api/ai-intake/high" : "/api/ai-intake/low";
 }
 
+/**
+ * Extracts a readable error message from an API error response.
+ * Zod validation errors return {formErrors, fieldErrors} — we flatten those
+ * into a single string. String errors are passed through as-is.
+ */
+function extractErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error != null && typeof error === "object") {
+    const obj = error as Record<string, unknown>;
+    // Zod validation error shape: { formErrors: string[], fieldErrors: Record<string, string[]> }
+    if ("fieldErrors" in obj || "formErrors" in obj) {
+      const fieldErrors = (obj.fieldErrors as Record<string, string[]>) ?? {};
+      const formErrors = (obj.formErrors as string[]) ?? [];
+      const messages = [
+        ...formErrors,
+        ...Object.values(fieldErrors).flat(),
+      ].filter(Boolean);
+      return messages.length > 0 ? messages.join(". ") : "Invalid request. Please try again.";
+    }
+  }
+  return "Something went wrong. Please try again.";
+}
+
 // ─── Emergency banner ─────────────────────────────────────────────────────────
 function EmergencyBanner({ message }: { message: string }) {
   return (
@@ -486,7 +509,7 @@ export default function AIAgentPage() {
       const json = await res.json() as Record<string, unknown>;
 
       if (!res.ok) {
-        setApiError((json?.error as string) ?? "AI service unavailable. Please try again.");
+        setApiError(json?.error ? extractErrorMessage(json.error) : "AI service unavailable. Please try again.");
         setAiLoading(false);
         return;
       }
@@ -563,7 +586,7 @@ export default function AIAgentPage() {
         }),
       });
       const json = await res.json() as Record<string, unknown>;
-      if (!res.ok) { setApiError((json?.error as string) ?? "AI service unavailable."); setAiLoading(false); return; }
+      if (!res.ok) { setApiError(json?.error ? extractErrorMessage(json.error) : "AI service unavailable."); setAiLoading(false); return; }
       if (json.fallbackOccurred && json.fallbackNotice) {
         setFallbackOccurred(true);
         addMessage({ role: "system", content: json.fallbackNotice as string });

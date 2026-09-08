@@ -9,6 +9,9 @@ export const metadata: Metadata = {
   title: "NoQueue Health — Hospital documentation, made simple",
   description:
     "A two-sided marketplace connecting hospital documentation agents with patients, plus an AI-powered self-serve intake flow.",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export const viewport: Viewport = {
