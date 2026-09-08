@@ -97,3 +97,4 @@ CREATE POLICY "bookings_select_participant" ON bookings
   FOR SELECT USING (
     patient_id = auth.uid() OR agent_id = auth.uid()
   );
+

@@ -7,27 +7,42 @@ import {
   AlertTriangle,
   Bot,
   CheckCircle2,
+  ChevronRight,
+  Clock,
+  History,
   Mic,
   MicOff,
   Send,
+  Sparkles,
   Volume2,
   VolumeX,
+  Zap,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { useIntakeStore, type ChatMessage } from "@/lib/store";
+import { useIntakeStore, type ChatMessage, type IntakeTier, type IntakeLanguage } from "@/lib/store";
 import {
   type PatientContext,
   countCollectedFields,
   INTAKE_FIELD_ORDER,
 } from "@/lib/schema";
-import { useVoiceInput } from "@/lib/hooks/useVoiceInput";
+import { useVoiceInput, type VoiceLang } from "@/lib/hooks/useVoiceInput";
 import { useVoiceSpeech } from "@/lib/hooks/useVoiceSpeech";
 
 type InputMode = "text" | "voice";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function voiceLang(language: IntakeLanguage): VoiceLang {
+  return language === "hi" ? "hi-IN" : "en-IN";
+}
+
+function apiEndpoint(tier: IntakeTier): string {
+  return tier === "high" ? "/api/ai-intake/high" : "/api/ai-intake/low";
+}
 
 // ─── Emergency banner ─────────────────────────────────────────────────────────
 function EmergencyBanner({ message }: { message: string }) {
@@ -78,29 +93,153 @@ function ProgressBar({ collected }: { collected: number }) {
   );
 }
 
+// ─── Tier picker ──────────────────────────────────────────────────────────────
+function TierPicker({
+  selected,
+  onSelect,
+}: {
+  selected: IntakeTier;
+  onSelect: (t: IntakeTier) => void;
+}) {
+  const tiers: {
+    id:       IntakeTier;
+    icon:     React.ElementType;
+    label:    string;
+    badge:    string;
+    features: string[];
+  }[] = [
+    {
+      id:       "low",
+      icon:     Zap,
+      label:    "Standard",
+      badge:    "Fast · English",
+      features: [
+        "Text chat only",
+        "English responses",
+        "Powered by Groq (fast)",
+      ],
+    },
+    {
+      id:       "high",
+      icon:     Sparkles,
+      label:    "Advanced",
+      badge:    "Voice · Hindi supported",
+      features: [
+        "Voice input & text",
+        "Hindi or English",
+        "Powered by Kimi K3",
+      ],
+    },
+  ];
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {tiers.map(({ id, icon: Icon, label, badge, features }) => {
+        const active = selected === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onSelect(id)}
+            className={`flex flex-col gap-3 rounded-2xl border p-5 text-left transition-all ${
+              active
+                ? "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/20"
+                : "border-white/40 bg-white/60 hover:bg-white/80"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                  active ? "bg-primary/10 text-primary" : "bg-muted/40 text-muted-foreground"
+                }`}
+              >
+                <Icon className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div>
+                <p className={`font-semibold ${active ? "text-primary" : ""}`}>{label}</p>
+                <p className="text-xs text-muted-foreground">{badge}</p>
+              </div>
+              {active && (
+                <CheckCircle2 className="ml-auto h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+              )}
+            </div>
+            <ul className="space-y-1">
+              {features.map((f) => (
+                <li key={f} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="h-1 w-1 rounded-full bg-current shrink-0" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Language toggle (High tier only) ────────────────────────────────────────
+function LanguageToggle({
+  language,
+  onChange,
+}: {
+  language: IntakeLanguage;
+  onChange: (l: IntakeLanguage) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-muted-foreground">Language:</span>
+      <div className="flex gap-1 rounded-xl border border-white/40 bg-white/40 p-1">
+        {(["en", "hi"] as IntakeLanguage[]).map((l) => (
+          <button
+            key={l}
+            onClick={() => onChange(l)}
+            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+              language === l
+                ? "bg-white shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {l === "en" ? "English" : "हिंदी"}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Mode toggle ──────────────────────────────────────────────────────────────
 function ModeToggle({
   mode,
   onToggle,
   voiceSupported,
+  tierIsHigh,
 }: {
   mode: InputMode;
   onToggle: (m: InputMode) => void;
   voiceSupported: boolean;
+  tierIsHigh: boolean;
 }) {
+  const voiceAvailable = voiceSupported && tierIsHigh;
   return (
     <div className="flex w-fit gap-1 rounded-xl border border-white/40 bg-white/40 p-1 backdrop-blur-sm">
       {(["text", "voice"] as InputMode[]).map((m) => (
         <button
           key={m}
           onClick={() => onToggle(m)}
-          disabled={m === "voice" && !voiceSupported}
+          disabled={m === "voice" && !voiceAvailable}
+          title={
+            m === "voice" && !tierIsHigh
+              ? "Voice is only available on the Advanced tier"
+              : m === "voice" && !voiceSupported
+              ? "Voice not supported in this browser"
+              : undefined
+          }
           className={`flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
             mode === m
               ? "bg-white shadow-sm text-foreground"
               : "text-muted-foreground hover:text-foreground"
           }`}
-          title={m === "voice" && !voiceSupported ? "Voice not supported in this browser" : undefined}
         >
           {m === "text" ? <Send className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
           {m === "text" ? "Text" : "Voice"}
@@ -110,19 +249,11 @@ function ModeToggle({
   );
 }
 
-// ─── Voice controls ───────────────────────────────────────────────────────────
+// ─── Voice panel ──────────────────────────────────────────────────────────────
 function VoicePanel({
-  listening,
-  speaking,
-  transcript,
-  interim,
-  inputError,
-  onStartListening,
-  onStopListening,
-  onStopSpeaking,
-  onSubmit,
-  onTranscriptChange,
-  disabled,
+  listening, speaking, transcript, interim, inputError,
+  onStartListening, onStopListening, onStopSpeaking, onSubmit,
+  onTranscriptChange, disabled, language,
 }: {
   listening:          boolean;
   speaking:           boolean;
@@ -135,26 +266,28 @@ function VoicePanel({
   onSubmit:           (text: string) => void;
   onTranscriptChange: (t: string) => void;
   disabled:           boolean;
+  language:           IntakeLanguage;
 }) {
+  const placeholder = language === "hi"
+    ? (listening ? "सुन रहा हूँ… अभी बोलें" : "बोलने के लिए माइक दबाएं")
+    : (listening ? "Listening… speak now" : "Press the mic to start speaking");
+
   return (
     <div className="border-t border-white/40 p-4 space-y-3">
-      {/* Live transcript — editable so user can fix mis-recognitions */}
       <div className="grid gap-1.5">
         <Label htmlFor="voice-transcript" className="text-xs text-muted-foreground">
-          Your answer {listening && <span className="text-red-500 animate-pulse">● Recording…</span>}
+          {language === "hi" ? "आपका जवाब" : "Your answer"}{" "}
+          {listening && <span className="text-red-500 animate-pulse">● {language === "hi" ? "रिकॉर्डिंग…" : "Recording…"}</span>}
         </Label>
         <div className="relative">
           <textarea
             id="voice-transcript"
             value={transcript + (interim ? ` ${interim}` : "")}
-            onChange={(e) => {
-              // strip the interim part — user edits only the final transcript
-              onTranscriptChange(e.target.value);
-            }}
+            onChange={(e) => onTranscriptChange(e.target.value)}
             rows={2}
-            placeholder={listening ? "Listening… speak now" : "Press the mic to start speaking"}
+            placeholder={placeholder}
             className="w-full resize-none rounded-xl border border-input bg-white/60 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 placeholder:text-muted-foreground"
-            aria-label="Voice transcript — editable"
+            aria-label={language === "hi" ? "वॉयस ट्रांसक्रिप्ट" : "Voice transcript — editable"}
           />
           {interim && (
             <span className="absolute bottom-2 right-3 text-xs text-muted-foreground/60 italic">
@@ -162,17 +295,16 @@ function VoicePanel({
             </span>
           )}
         </div>
-        {inputError && (
-          <p className="text-xs text-destructive" role="alert">{inputError}</p>
-        )}
+        {inputError && <p className="text-xs text-destructive" role="alert">{inputError}</p>}
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Mic toggle */}
         <button
           onClick={listening ? onStopListening : onStartListening}
           disabled={disabled}
-          aria-label={listening ? "Stop recording" : "Start recording"}
+          aria-label={listening
+            ? (language === "hi" ? "रिकॉर्डिंग बंद करें" : "Stop recording")
+            : (language === "hi" ? "रिकॉर्डिंग शुरू करें" : "Start recording")}
           className={`flex h-12 w-12 items-center justify-center rounded-full transition-all disabled:opacity-50 ${
             listening
               ? "bg-red-500 text-white shadow-lg shadow-red-200 animate-pulse"
@@ -182,11 +314,10 @@ function VoicePanel({
           {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
         </button>
 
-        {/* Stop AI speaking */}
         {speaking && (
           <button
             onClick={onStopSpeaking}
-            aria-label="Stop AI speaking"
+            aria-label={language === "hi" ? "AI को रोकें" : "Stop AI speaking"}
             className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200"
           >
             <VolumeX className="h-4 w-4" />
@@ -194,20 +325,18 @@ function VoicePanel({
         )}
         {speaking && !listening && (
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Volume2 className="h-3.5 w-3.5 text-primary animate-pulse" /> AI is speaking…
+            <Volume2 className="h-3.5 w-3.5 text-primary animate-pulse" />
+            {language === "hi" ? "AI बोल रहा है…" : "AI is speaking…"}
           </span>
         )}
 
-        {/* Submit transcript */}
         <Button
           className="ml-auto gap-2"
-          onClick={() => {
-            onStopListening();
-            onSubmit(transcript.trim());
-          }}
+          onClick={() => { onStopListening(); onSubmit(transcript.trim()); }}
           disabled={!transcript.trim() || disabled}
         >
-          <Send className="h-4 w-4" /> Submit
+          <Send className="h-4 w-4" />
+          {language === "hi" ? "भेजें" : "Submit"}
         </Button>
       </div>
     </div>
@@ -219,6 +348,9 @@ export default function AIAgentPage() {
   const router = useRouter();
 
   const {
+    tier, setTier,
+    language, setLanguage,
+    fallbackOccurred, setFallbackOccurred,
     consented, setConsented,
     patientContext, setPatientContext,
     data, setData,
@@ -240,66 +372,32 @@ export default function AIAgentPage() {
   const [apiError, setApiError]             = useState<string | null>(null);
   const [isComplete, setIsComplete]         = useState(false);
 
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef    = useRef<HTMLDivElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
 
-  // Voice hooks
-  const voiceInput  = useVoiceInput("en-IN");
-  const voiceSpeech = useVoiceSpeech("en-IN");
+  // Voice lang derived from store language
+  const currentVoiceLang = voiceLang(language);
+  const voiceInput  = useVoiceInput(currentVoiceLang);
+  const voiceSpeech = useVoiceSpeech(currentVoiceLang);
 
-  // If either API is not supported, force text mode and show notice
+  // Voice available only on High tier
   const voiceFullySupported = voiceInput.supported && voiceSpeech.supported;
+  const voiceAvailable      = voiceFullySupported && tier === "high";
 
-  // Scroll to bottom on new messages
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation, aiLoading]);
-
-  // Speak AI messages in voice mode
-  useEffect(() => {
-    if (inputMode !== "voice" || conversation.length === 0) return;
-    const last = conversation[conversation.length - 1];
-    if (last.role === "assistant" && !aiLoading) {
-      voiceSpeech.speak(last.content);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation, aiLoading, inputMode]);
-
-  // Emergency: stop mic + stop speaking immediately
-  useEffect(() => {
-    if (emergency) {
-      voiceInput.stopListening();
-      voiceSpeech.stop();
-      if (emergency) voiceSpeech.speak(emergency);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [emergency]);
-
-  // Switch modes — stop anything in progress
-  const handleModeSwitch = (m: InputMode) => {
-    voiceInput.stopListening();
-    voiceSpeech.stop();
-    voiceInput.resetTranscript();
-    setInputMode(m);
-  };
-
-  // Load patient profile
+  // ── Load patient profile ──────────────────────────────────────────────────
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { router.replace("/"); return; }
-
       const { data: prof } = await supabase
         .from("profiles")
         .select("full_name, patient_profiles(age, gender, allergies, chronic_conditions)")
         .eq("id", user.id)
         .maybeSingle();
-
       if (prof) {
         const pp = Array.isArray(prof.patient_profiles)
           ? prof.patient_profiles[0]
           : prof.patient_profiles;
-
         const ctx: PatientContext = {
           name:              (prof.full_name as string | null) ?? user.email ?? "Patient",
           age:               (pp as { age?: number | null } | null)?.age               ?? null,
@@ -314,7 +412,51 @@ export default function AIAgentPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Core: send a message through the AI intake API
+  // ── Scroll to bottom on new messages ─────────────────────────────────────
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [conversation, aiLoading]);
+
+  // ── Speak AI messages in voice mode ──────────────────────────────────────
+  useEffect(() => {
+    if (inputMode !== "voice" || conversation.length === 0) return;
+    const last = conversation[conversation.length - 1];
+    // Don't speak system messages (fallback notices)
+    if (last.role === "assistant" && !aiLoading) {
+      voiceSpeech.speak(last.content);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation, aiLoading, inputMode]);
+
+  // ── Emergency: stop mic + speak warning ──────────────────────────────────
+  useEffect(() => {
+    if (emergency) {
+      voiceInput.stopListening();
+      voiceSpeech.stop();
+      voiceSpeech.speak(emergency);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emergency]);
+
+  // ── Mode switch ───────────────────────────────────────────────────────────
+  const handleModeSwitch = (m: InputMode) => {
+    voiceInput.stopListening();
+    voiceSpeech.stop();
+    voiceInput.resetTranscript();
+    setInputMode(m);
+  };
+
+  // ── Tier switch (only before starting) ────────────────────────────────────
+  const handleTierSelect = (t: IntakeTier) => {
+    setTier(t);
+    // Force text mode when switching to Low (voice not available on Low)
+    if (t === "low") {
+      setInputMode("text");
+      setLanguage("en");
+    }
+  };
+
+  // ── Core sendMessage ──────────────────────────────────────────────────────
   const sendMessage = useCallback(async (userText: string) => {
     if (!userText.trim() || aiLoading || emergency) return;
 
@@ -329,62 +471,74 @@ export default function AIAgentPage() {
     setApiError(null);
 
     try {
-      const res = await fetch("/api/ai-intake", {
+      const endpoint = apiEndpoint(tier);
+      const res = await fetch(endpoint, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationHistory:   [...conversation, userMsg],
           patientContext,
           currentStructuredData: data,
+          language:              tier === "high" ? language : "en",
         }),
       });
 
-      const json = await res.json();
+      const json = await res.json() as Record<string, unknown>;
 
       if (!res.ok) {
-        setApiError(json?.error ?? "AI service unavailable. Please try again.");
+        setApiError((json?.error as string) ?? "AI service unavailable. Please try again.");
         setAiLoading(false);
         return;
       }
 
+      // Emergency
       if (json.emergency === true) {
-        setEmergency(json.message);
+        setEmergency(json.message as string);
         setAiLoading(false);
         return;
       }
 
-      if (json.updatedData) setData({ ...data, ...json.updatedData });
+      // Fallback notice — add as inline system message
+      if (json.fallbackOccurred === true && json.fallbackNotice) {
+        setFallbackOccurred(true);
+        addMessage({ role: "system", content: json.fallbackNotice as string });
+      }
 
-      const reply = json.nextQuestion
+      if (json.updatedData) setData({ ...data, ...(json.updatedData as Record<string, string>) });
+
+      const reply = (json.nextQuestion as string | null)
         ?? (json.isComplete ? "Thanks — I have everything I need. Please review your information." : null);
 
       if (reply) addMessage({ role: "assistant", content: reply });
 
       if (json.isComplete) {
-        // Save department recommendation to store before navigating to review
         if (json.recommendedDepartment) {
-          setRecommendedDepartment(json.recommendedDepartment);
-          setRecommendedDepartmentReason(json.recommendedDepartmentReason ?? "");
-          setAlternateDepartment(json.alternateDepartment ?? null);
+          setRecommendedDepartment(json.recommendedDepartment as Parameters<typeof setRecommendedDepartment>[0]);
+          setRecommendedDepartmentReason((json.recommendedDepartmentReason as string) ?? "");
+          setAlternateDepartment((json.alternateDepartment as Parameters<typeof setAlternateDepartment>[0]) ?? null);
         }
-        // Save suggested investigations (blocklist already applied server-side)
-        setSuggestedInvestigations(json.suggestedInvestigations ?? []);
+        setSuggestedInvestigations((json.suggestedInvestigations as string[]) ?? []);
         setInvestigationsDisclaimer(
-          json.investigationsDisclaimer ??
+          (json.investigationsDisclaimer as string) ??
           "These are commonly associated tests, not a prescription — your doctor will decide what's actually needed based on examination."
         );
         setIsComplete(true);
       }
-
     } catch {
       setApiError("Network error — please check your connection and try again.");
     }
 
     setAiLoading(false);
     setTimeout(() => textInputRef.current?.focus(), 50);
-  }, [aiLoading, emergency, conversation, patientContext, data, addMessage, setData, voiceInput, voiceSpeech]);
+  }, [
+    aiLoading, emergency, tier, language, conversation, patientContext, data,
+    addMessage, setData, setFallbackOccurred, setRecommendedDepartment,
+    setRecommendedDepartmentReason, setAlternateDepartment,
+    setSuggestedInvestigations, setInvestigationsDisclaimer,
+    voiceInput, voiceSpeech,
+  ]);
 
-  // Kick off with the first AI question
+  // ── Kick off first AI question ────────────────────────────────────────────
   const handleStart = async () => {
     if (!consented) return;
     reset();
@@ -397,20 +551,26 @@ export default function AIAgentPage() {
 
     setAiLoading(true);
     try {
-      const res = await fetch("/api/ai-intake", {
+      const endpoint = apiEndpoint(tier);
+      const res = await fetch(endpoint, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationHistory:   [{ role: "user", content: "Hello, I'd like to start my intake." }],
           patientContext,
           currentStructuredData: {},
+          language:              tier === "high" ? language : "en",
         }),
       });
-      const json = await res.json();
-      if (!res.ok) { setApiError(json?.error ?? "AI service unavailable. Please try again."); setAiLoading(false); return; }
+      const json = await res.json() as Record<string, unknown>;
+      if (!res.ok) { setApiError((json?.error as string) ?? "AI service unavailable."); setAiLoading(false); return; }
+      if (json.fallbackOccurred && json.fallbackNotice) {
+        setFallbackOccurred(true);
+        addMessage({ role: "system", content: json.fallbackNotice as string });
+      }
       if (json.nextQuestion) {
         addMessage({ role: "user",      content: "Hello, I'd like to start my intake." });
-        addMessage({ role: "assistant", content: json.nextQuestion });
+        addMessage({ role: "assistant", content: json.nextQuestion as string });
       }
     } catch {
       setApiError("Could not connect to AI. Please try again.");
@@ -430,33 +590,44 @@ export default function AIAgentPage() {
       <div className="mx-auto max-w-xl space-y-6">
         <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
           <GlassCard className="p-6 sm:p-8">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Bot className="h-6 w-6" aria-hidden="true" />
+            <div className="flex items-center justify-between">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Bot className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground"
+                onClick={() => router.push("/patient/ai-agent/history")}
+              >
+                <History className="h-4 w-4" />
+                Past intakes
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
             </div>
+
             <h1 className="mt-4 text-2xl font-semibold tracking-tight">AI Intake Agent</h1>
             <p className="mt-2 text-muted-foreground">
               Answer a few questions about your symptoms. I&apos;ll prepare a
               doctor-ready summary — no repeated basics.
             </p>
 
-            {/* Mode selector */}
-            <div className="mt-5">
-              <p className="mb-2 text-sm font-medium text-muted-foreground">Choose input mode:</p>
-              <ModeToggle
-                mode={inputMode}
-                onToggle={setInputMode}
-                voiceSupported={voiceFullySupported}
-              />
-              {!voiceFullySupported && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Voice mode is not supported in this browser — text mode will be used.
-                </p>
-              )}
+            {/* ── Tier picker ─────────────────────────────────────────── */}
+            <div className="mt-6">
+              <p className="mb-3 text-sm font-medium">Choose intake mode:</p>
+              <TierPicker selected={tier} onSelect={handleTierSelect} />
             </div>
 
-            {/* What we already know */}
+            {/* ── Language toggle (High only) ──────────────────────────── */}
+            {tier === "high" && (
+              <div className="mt-4">
+                <LanguageToggle language={language} onChange={setLanguage} />
+              </div>
+            )}
+
+            {/* ── What we already know ─────────────────────────────────── */}
             {!profileLoading && patientContext && (
-              <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <div className="mt-5 rounded-xl border border-primary/20 bg-primary/5 p-4">
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary">
                   Already on file — won&apos;t be re-asked
                 </p>
@@ -470,7 +641,7 @@ export default function AIAgentPage() {
               </div>
             )}
 
-            {/* Consent */}
+            {/* ── Consent ─────────────────────────────────────────────── */}
             <div className="mt-6 flex items-start gap-3 rounded-xl border border-white/40 bg-white/40 p-4">
               <Checkbox
                 id="consent"
@@ -502,19 +673,37 @@ export default function AIAgentPage() {
   // ── Chat screen ───────────────────────────────────────────────────────────
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      {/* Progress + mode toggle */}
+      {/* Progress + controls */}
       <GlassCard className="p-4 space-y-3">
         <ProgressBar collected={collected} />
-        <div className="flex items-center justify-between gap-3">
-          <ModeToggle
-            mode={inputMode}
-            onToggle={handleModeSwitch}
-            voiceSupported={voiceFullySupported}
-          />
-          {voiceInput.error && (
-            <p className="text-xs text-destructive">{voiceInput.error}</p>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <ModeToggle
+              mode={inputMode}
+              onToggle={handleModeSwitch}
+              voiceSupported={voiceFullySupported}
+              tierIsHigh={tier === "high"}
+            />
+            {tier === "high" && inputMode === "voice" && (
+              <LanguageToggle language={language} onChange={setLanguage} />
+            )}
+          </div>
+          {/* Tier badge */}
+          <span className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${
+            tier === "high"
+              ? "border-primary/20 bg-primary/10 text-primary"
+              : "border-muted text-muted-foreground"
+          }`}>
+            {tier === "high" ? <Sparkles className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
+            {tier === "high" ? "Advanced" : "Standard"}
+            {fallbackOccurred && (
+              <span className="ml-1 text-amber-600">(using Standard)</span>
+            )}
+          </span>
         </div>
+        {voiceInput.error && (
+          <p className="text-xs text-destructive">{voiceInput.error}</p>
+        )}
       </GlassCard>
 
       {/* Emergency banner */}
@@ -523,33 +712,53 @@ export default function AIAgentPage() {
       {/* Chat window */}
       <GlassCard className="flex flex-col overflow-hidden p-0 min-h-[300px] h-[58dvh] max-h-[520px]">
         <div className="flex-1 overflow-y-auto space-y-3 p-4">
-          {conversation.map((msg, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15 }}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-white/70 text-foreground shadow-sm"
-                }`}
+          {conversation.map((msg, i) => {
+            // System messages (fallback notice) — inline amber banner
+            if (msg.role === "system") {
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex justify-center"
+                >
+                  <div className="max-w-[92%] rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+                    ⚠️ {msg.content}
+                  </div>
+                </motion.div>
+              );
+            }
+
+            return (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.15 }}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {msg.role === "assistant" && (
-                  <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-primary/60">
-                    <Bot className="h-3 w-3" /> AI Agent
-                    {voiceSpeech.speaking && inputMode === "voice" && (
-                      <Volume2 className="h-3 w-3 animate-pulse text-primary ml-1" />
-                    )}
-                  </p>
-                )}
-                <p className="whitespace-pre-wrap">{msg.content}</p>
-              </div>
-            </motion.div>
-          ))}
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-white/70 text-foreground shadow-sm"
+                  }`}
+                >
+                  {msg.role === "assistant" && (
+                    <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-primary/60">
+                      {tier === "high" ? <Sparkles className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
+                      {tier === "high" ? "Kimi K3" : "AI Agent"}
+                      {fallbackOccurred && <span className="text-amber-500">(Standard)</span>}
+                      {voiceSpeech.speaking && inputMode === "voice" && (
+                        <Volume2 className="h-3 w-3 animate-pulse text-primary ml-1" />
+                      )}
+                    </p>
+                  )}
+                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                </div>
+              </motion.div>
+            );
+          })}
 
           {/* Typing indicator */}
           <AnimatePresence>
@@ -577,7 +786,7 @@ export default function AIAgentPage() {
           <div ref={bottomRef} />
         </div>
 
-        {/* Input area — text or voice */}
+        {/* Input area */}
         {!emergency && !isComplete && (
           <>
             {inputMode === "text" ? (
@@ -592,8 +801,8 @@ export default function AIAgentPage() {
                     value={textInput}
                     onChange={(e) => setTextInput(e.target.value)}
                     onKeyDown={handleTextKey}
-                    placeholder="Type your answer…"
-                    aria-label="Your answer"
+                    placeholder={language === "hi" ? "अपना जवाब टाइप करें…" : "Type your answer…"}
+                    aria-label={language === "hi" ? "आपका जवाब" : "Your answer"}
                     disabled={aiLoading}
                     className="flex-1 rounded-xl border border-input bg-white/60 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 placeholder:text-muted-foreground disabled:opacity-50"
                   />
@@ -601,7 +810,7 @@ export default function AIAgentPage() {
                     size="icon"
                     onClick={() => sendMessage(textInput)}
                     disabled={!textInput.trim() || aiLoading}
-                    aria-label="Send"
+                    aria-label={language === "hi" ? "भेजें" : "Send"}
                   >
                     <Send className="h-4 w-4" />
                   </Button>
@@ -620,6 +829,7 @@ export default function AIAgentPage() {
                 onSubmit={sendMessage}
                 onTranscriptChange={voiceInput.setTranscript}
                 disabled={aiLoading || !!emergency}
+                language={language}
               />
             )}
             {inputMode === "voice" && apiError && (
@@ -629,7 +839,7 @@ export default function AIAgentPage() {
         )}
       </GlassCard>
 
-      {/* Complete — go to review */}
+      {/* Intake complete */}
       {isComplete && !emergency && (
         <motion.div
           initial={{ opacity: 0, y: 8 }}
@@ -639,9 +849,13 @@ export default function AIAgentPage() {
           <GlassCard className="flex flex-col items-center gap-4 p-6 text-center">
             <CheckCircle2 className="h-10 w-10 text-teal-600" aria-hidden="true" />
             <div>
-              <p className="font-semibold">Intake complete</p>
+              <p className="font-semibold">
+                {language === "hi" ? "इनटेक पूरा हुआ" : "Intake complete"}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Review your information and generate your doctor-ready report.
+                {language === "hi"
+                  ? "अपनी जानकारी की समीक्षा करें और रिपोर्ट तैयार करें।"
+                  : "Review your information and generate your doctor-ready report."}
               </p>
             </div>
             <Button
@@ -649,7 +863,7 @@ export default function AIAgentPage() {
               onClick={() => { voiceSpeech.stop(); router.push("/patient/ai-agent/review"); }}
               className="w-full sm:w-auto"
             >
-              Review &amp; generate report
+              {language === "hi" ? "समीक्षा करें और रिपोर्ट बनाएं" : "Review & generate report"}
             </Button>
           </GlassCard>
         </motion.div>

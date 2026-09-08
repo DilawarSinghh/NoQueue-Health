@@ -40,6 +40,9 @@ export function isSpeechRecognitionSupported(): boolean {
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 }
 
+// ─── Supported recognition language codes ────────────────────────────────────
+export type VoiceLang = "en-IN" | "hi-IN" | "en-US" | "en-GB";
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 export interface UseVoiceInputReturn {
   supported:    boolean;
@@ -53,7 +56,13 @@ export interface UseVoiceInputReturn {
   setTranscript:   (t: string) => void; // allow manual edits
 }
 
-export function useVoiceInput(lang = "en-IN"): UseVoiceInputReturn {
+/**
+ * @param lang  BCP-47 language tag for speech recognition.
+ *              Reactive — changing this prop mid-session stops any active
+ *              recognition and the next startListening() call uses the new lang.
+ *              Default: "en-IN"
+ */
+export function useVoiceInput(lang: VoiceLang = "en-IN"): UseVoiceInputReturn {
   const supported = isSpeechRecognitionSupported();
 
   const [listening,  setListening]  = useState(false);
@@ -62,6 +71,18 @@ export function useVoiceInput(lang = "en-IN"): UseVoiceInputReturn {
   const [error,      setError]      = useState<string | null>(null);
 
   const recogRef = useRef<SpeechRecognitionInstance | null>(null);
+  // Keep lang in a ref so startListening() always uses the latest value
+  // even if it was constructed before the prop changed.
+  const langRef  = useRef<VoiceLang>(lang);
+
+  useEffect(() => {
+    langRef.current = lang;
+    // If recognition is active and the language changed, stop and let the
+    // caller restart — the new lang will be picked up on the next start.
+    if (recogRef.current && listening) {
+      recogRef.current.stop();
+    }
+  }, [lang, listening]);
 
   // Build a fresh instance each time we start (avoids stale closure issues)
   const startListening = useCallback(() => {
@@ -70,8 +91,8 @@ export function useVoiceInput(lang = "en-IN"): UseVoiceInputReturn {
 
     const Ctor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     const r    = new Ctor();
-    r.lang            = lang;
-    r.continuous      = true;   // keep mic open until stopListening()
+    r.lang            = langRef.current;  // always the latest lang
+    r.continuous      = true;
     r.interimResults  = true;
     r.maxAlternatives = 1;
 
@@ -107,7 +128,7 @@ export function useVoiceInput(lang = "en-IN"): UseVoiceInputReturn {
 
     recogRef.current = r;
     r.start();
-  }, [lang, supported]);
+  }, [supported]);
 
   const stopListening = useCallback(() => {
     recogRef.current?.stop();

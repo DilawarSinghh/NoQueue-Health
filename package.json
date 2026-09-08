@@ -22,6 +22,7 @@
     "groq-sdk": "^0.9.0",
     "lucide-react": "^0.441.0",
     "next": "14.2.25",
+    "openai": "7.10.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "resend": "^4.0.0",

@@ -129,11 +129,13 @@ export default function ReviewPage() {
           intakeData:  finalData,
           patientName: patientContext?.name ?? "Patient",
           patientId:   userId,
-          // Pass through for the PDF — the generate-report route will embed it
           recommendedDepartment:       confirmedDept,
           recommendedDepartmentReason: recommendedDepartmentReason ?? "",
           suggestedInvestigations:     suggestedInvestigations ?? [],
           investigationsDisclaimer:    investigationsDisclaimer ?? "",
+          // Tier metadata for intake_records
+          tier:             useIntakeStore.getState().tier,
+          fallbackOccurred: useIntakeStore.getState().fallbackOccurred,
         }),
       });
 

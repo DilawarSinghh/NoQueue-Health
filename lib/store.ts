@@ -6,81 +6,114 @@ import type { Department } from "@/lib/constants/hospital";
 // Data lives ONLY here until the patient explicitly confirms on the review
 // screen — never in URL params, never in localStorage in v1.
 
+export type IntakeTier     = "low" | "high";
+export type IntakeLanguage = "en" | "hi";
+
 export interface ChatMessage {
-  role:    "user" | "assistant";
+  role:    "user" | "assistant" | "system";
   content: string;
 }
 
 interface IntakeStore {
-  /** Consent gate — intake refuses to run without this. */
+  // ── Tier + language ─────────────────────────────────────────────────────
+  /** Which model tier the patient chose for this session. */
+  tier: IntakeTier;
+  setTier: (tier: IntakeTier) => void;
+
+  /** Conversation language — 'hi' only available on High tier. */
+  language: IntakeLanguage;
+  setLanguage: (lang: IntakeLanguage) => void;
+
+  /**
+   * True if Kimi K3 failed and the session fell back to Groq mid-session.
+   * Stored here so it can be passed to intake_records on save.
+   */
+  fallbackOccurred: boolean;
+  setFallbackOccurred: (v: boolean) => void;
+
+  // ── Consent ──────────────────────────────────────────────────────────────
   consented: boolean;
   setConsented: (v: boolean) => void;
 
-  /** Pre-filled patient context pulled from profiles + patient_profiles. */
+  // ── Patient context ──────────────────────────────────────────────────────
   patientContext: PatientContext | null;
   setPatientContext: (ctx: PatientContext) => void;
 
-  /** Structured data collected so far (partial until complete). */
+  // ── Structured intake data ───────────────────────────────────────────────
   data: IntakeDataPartial;
   setData: (data: IntakeDataPartial) => void;
 
-  /** Full conversation transcript. */
+  // ── Conversation transcript ──────────────────────────────────────────────
   conversation: ChatMessage[];
   addMessage: (msg: ChatMessage) => void;
   setConversation: (msgs: ChatMessage[]) => void;
 
-  /** AI-generated clinical summary (set on the review screen). */
+  // ── Output ───────────────────────────────────────────────────────────────
   clinicalSummary: string;
   setClinicalSummary: (s: string) => void;
 
-  /** Signed PDF URL after successful generation. */
   pdfUrl: string | null;
   setPdfUrl: (url: string | null) => void;
 
-  /** AI-recommended department (set when isComplete=true, validated server-side). */
+  // ── Department recommendation ─────────────────────────────────────────────
   recommendedDepartment: Department | null;
   setRecommendedDepartment: (dept: Department | null) => void;
 
-  /** Plain-language reason for the recommendation, written for the patient. */
   recommendedDepartmentReason: string;
   setRecommendedDepartmentReason: (reason: string) => void;
 
-  /** Optional second-choice department if the AI was uncertain. */
   alternateDepartment: Department | null;
   setAlternateDepartment: (dept: Department | null) => void;
 
-  /** Suggested diagnostic investigations (2–5 items, empty if vague/emergency). */
+  // ── Suggested investigations ──────────────────────────────────────────────
   suggestedInvestigations: string[];
   setSuggestedInvestigations: (items: string[]) => void;
 
-  /** Disclaimer text to display alongside investigations. */
   investigationsDisclaimer: string;
   setInvestigationsDisclaimer: (text: string) => void;
 
-  /** Reset everything for a new intake session. */
+  // ── Reset ─────────────────────────────────────────────────────────────────
+  /** Full reset for a new intake session. Tier/language are preserved so the
+   *  user doesn't have to re-pick them if they start over. */
   reset: () => void;
 }
 
-export const useIntakeStore = create<IntakeStore>((set) => ({
+export const useIntakeStore = create<IntakeStore>((set, get) => ({
+  // ── Tier + language ─────────────────────────────────────────────────────
+  tier:               "low",
+  setTier:            (tier)    => set({ tier }),
+
+  language:           "en",
+  setLanguage:        (lang)    => set({ language: lang }),
+
+  fallbackOccurred:   false,
+  setFallbackOccurred: (v)      => set({ fallbackOccurred: v }),
+
+  // ── Consent ──────────────────────────────────────────────────────────────
   consented:          false,
-  setConsented:       (v)    => set({ consented: v }),
+  setConsented:       (v)       => set({ consented: v }),
 
+  // ── Patient context ──────────────────────────────────────────────────────
   patientContext:     null,
-  setPatientContext:  (ctx)  => set({ patientContext: ctx }),
+  setPatientContext:  (ctx)     => set({ patientContext: ctx }),
 
+  // ── Structured intake data ───────────────────────────────────────────────
   data:               {},
-  setData:            (data) => set({ data }),
+  setData:            (data)    => set({ data }),
 
+  // ── Conversation transcript ──────────────────────────────────────────────
   conversation:       [],
-  addMessage:         (msg)  => set((s) => ({ conversation: [...s.conversation, msg] })),
-  setConversation:    (msgs) => set({ conversation: msgs }),
+  addMessage:         (msg)     => set((s) => ({ conversation: [...s.conversation, msg] })),
+  setConversation:    (msgs)    => set({ conversation: msgs }),
 
+  // ── Output ───────────────────────────────────────────────────────────────
   clinicalSummary:    "",
-  setClinicalSummary: (s)    => set({ clinicalSummary: s }),
+  setClinicalSummary: (s)       => set({ clinicalSummary: s }),
 
   pdfUrl:             null,
-  setPdfUrl:          (url)  => set({ pdfUrl: url }),
+  setPdfUrl:          (url)     => set({ pdfUrl: url }),
 
+  // ── Department recommendation ─────────────────────────────────────────────
   recommendedDepartment:          null,
   setRecommendedDepartment:       (dept)   => set({ recommendedDepartment: dept }),
 
@@ -90,14 +123,20 @@ export const useIntakeStore = create<IntakeStore>((set) => ({
   alternateDepartment:            null,
   setAlternateDepartment:         (dept)   => set({ alternateDepartment: dept }),
 
+  // ── Suggested investigations ──────────────────────────────────────────────
   suggestedInvestigations:        [],
   setSuggestedInvestigations:     (items)  => set({ suggestedInvestigations: items }),
 
   investigationsDisclaimer:       "",
   setInvestigationsDisclaimer:    (text)   => set({ investigationsDisclaimer: text }),
 
-  reset: () =>
+  // ── Reset ─────────────────────────────────────────────────────────────────
+  reset: () => {
+    const { tier, language } = get(); // preserve tier/language across restarts
     set({
+      tier,
+      language,
+      fallbackOccurred:            false,
       consented:                   false,
       patientContext:              null,
       data:                        {},
@@ -109,5 +148,6 @@ export const useIntakeStore = create<IntakeStore>((set) => ({
       alternateDepartment:         null,
       suggestedInvestigations:     [],
       investigationsDisclaimer:    "",
-    }),
+    });
+  },
 }));
