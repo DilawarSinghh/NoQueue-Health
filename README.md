@@ -15,7 +15,8 @@ Most government hospital visits in India involve three separate queues just to f
 ### For patients
 
 - **Browse & book agents** — search vetted human documentation agents by department (40+ Safdarjung departments), price, and star rating. One tap to send a booking request.
-- **AI intake** — a conversational chat (text or voice) that collects chief complaint, symptom history, severity, and relevant background. The AI never re-asks anything already in your profile (age, gender, allergies, chronic conditions). When complete, it generates a formatted clinical summary PDF and emails it to the clinic.
+- **AI intake** — a conversational chat that collects chief complaint, symptom history, severity, and relevant background. Two tiers: **Low** (fast text-only, English, Groq) and **High** (voice + Hindi support, Kimi K3 via Cline gateway, with automatic fallback to Low on failure). The AI never re-asks anything already in your profile (age, gender, allergies, chronic conditions). When complete, it generates a formatted clinical summary PDF and emails it to the clinic.
+- **Intake history** — view past intake sessions with tier used, fallback status, recommended department, and re-download the PDF report.
 - **Department routing** — once the AI has enough information it recommends which department to go to first, with a plain-language reason. If it's uncertain it gives a primary and a secondary option.
 - **Emergency detection** — if anything the patient describes sounds urgent (chest pain, difficulty breathing, severe bleeding, stroke signs, etc.) the chat stops immediately and shows an emergency banner with a direct call link.
 - **Bookings tracker** — see all past and current bookings and their status (pending / accepted / completed / cancelled / declined).
@@ -64,7 +65,7 @@ Ten tables, Row Level Security on all of them:
 | `bookings` | Links a patient to an agent post. Status: `pending → accepted/declined → completed/cancelled`. |
 | `threads` | A conversation. Type is either `agent_patient` or `site_assistant`. |
 | `messages` | One row per message in any thread. `is_assistant = true` for AI messages (inserted server-side via service role). |
-| `intake_records` | Completed AI intake sessions: structured JSON, clinical summary text, PDF storage path. |
+| `intake_records` | Completed AI intake sessions: structured JSON, clinical summary text, PDF storage path, `tier` (low/high), `fallback_occurred`, `recommended_department`. |
 | `notifications` | Lightweight in-app notification rows. |
 | `booking_ratings` | One rating per completed booking (1–5 stars + review text). |
 
@@ -81,20 +82,19 @@ Ten tables, Row Level Security on all of them:
 - `0004_fix_rls_and_realtime.sql` — sets `REPLICA IDENTITY FULL` on realtime tables, re-asserts correct RLS policies for threads/messages/notifications.
 - `0005_intake_tier.sql` — adds `tier`, `fallback_occurred`, and `recommended_department` columns to `intake_records`.
 
-### AI (Groq + Kimi K3)
+### AI (Groq + Kimi K3 via Cline)
 
-Two separate AI features. The intake now has two selectable tiers.
+Two separate AI features. The intake has two selectable tiers.
 
 **AI Intake — Low tier** (`/api/ai-intake/low`)
 - Text-only, English only.
 - Uses Groq (`openai/gpt-oss-120b` → `qwen/qwen3.6-27b` fallback chain).
-- Same JSON contract as before.
+- Same JSON contract as High tier.
 
 **AI Intake — High tier** (`/api/ai-intake/high`)
 - Voice input + text; Hindi and English supported.
-- Uses Kimi K3 (`kimi-k3`) via Moonshot's OpenAI-compatible endpoint (`https://api.moonshot.ai/v1`).
-- `reasoning_effort: "low"` — conversational flow doesn't need deep reasoning.
-- Automatic fallback to Low tier if Kimi K3 fails (error logged, patient sees a non-blocking amber notice in chat, conversation continues on Groq).
+- Uses Kimi K3 (`moonshotai/kimi-k3`) via **Cline's unified gateway** (`https://api.cline.bot/api/v1`) using a Cline API key from `app.cline.bot`.
+- Automatic fallback to Low tier if Kimi K3 fails (error logged with HTTP status, patient sees a non-blocking amber notice in chat, conversation continues on Groq).
 - System prompt detects and mirrors the patient's language; structured field values stay in English regardless.
 
 Both tiers share identical logic from `lib/intakePrompt.ts`:
@@ -104,9 +104,14 @@ Both tiers share identical logic from `lib/intakePrompt.ts`:
 
 The patient picks their tier on the pre-start screen. No mid-session switching; resetting preserves the tier choice.
 
+**Intake history** (`/patient/ai-agent/history`)
+- Lists past intake sessions: date, tier used, fallback status, recommended department.
+- Re-generates fresh signed PDF download links from Supabase Storage on each click.
+- Queries via RLS-respecting client (patient-owner-only).
+
 **Report generation** (`/api/generate-report`)
-- Now stores `tier` and `fallback_occurred` in `intake_records` (migration `0005`).
-- No other changes — both tiers funnel through the same route.
+- Stores `tier`, `fallback_occurred`, and `recommended_department` in `intake_records` (migration `0005`).
+- Both tiers funnel through the same route — no branching on tier downstream.
 
 **Site assistant** (`/api/site-assistant`)
 - Navigation-only assistant. Strictly refuses medical questions.
@@ -186,7 +191,7 @@ lib/
   schema.ts                   # Zod schemas + field definitions for AI intake
   pdfTemplate.tsx             # @react-pdf report document
   groq.ts                     # Groq client singleton (Low tier)
-  kimi.ts                     # Kimi K3 client singleton (High tier, Moonshot endpoint)
+  kimi.ts                     # Kimi K3 client singleton (High tier, via Cline gateway)
   intakePrompt.ts             # Shared prompt builder + parser used by both routes
   supabase.ts                 # Supabase service-role client (server only)
   supabase/                   # Cookie-backed client + server + middleware helpers
@@ -226,8 +231,7 @@ Required variables:
 | `CLINE_API_KEY` | Cline API key from app.cline.bot — optional; High tier auto-falls-back to Groq if absent |
 | `RESEND_API_KEY` | https://resend.com/api-keys |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your Vercel URL in prod |
-| `DOCTOR_REPORT_EMAIL` | Email address that receives intake PDFs |
-| `HOSPITAL_NOTIFY_EMAIL` | Notification email for the clinic |
+| `DOCTOR_REPORT_EMAIL` | Email address that receives intake PDFs via Resend |
 
 ```bash
 # 3. Database — run in Supabase SQL Editor (or supabase db push)
@@ -257,6 +261,7 @@ npm run dev
 - [x] Phase 5 — AI intake (text + voice), PDF generation, Resend email
 - [x] Phase 6 — Voice mode (Web Speech API — input + synthesis)
 - [x] Phase 7 — Site-wide assistant
+- [x] Phase 7.5 — Tiered AI intake (Low/High), voice + Hindi, Cline gateway, intake history, fallback behavior
 - [ ] Phase 8 — Final mobile polish + comprehensive error-state pass
 
 ---
@@ -273,4 +278,6 @@ npm run dev
 
 **Service role usage.** The service role (bypasses RLS) is used only in API route handlers, never imported into any client component. It's needed for: reading other users' profiles in the agent feed, inserting AI messages (which have no `sender_id`), report generation/storage, and the auth callback profile lookup.
 
-**Resend limitation.** Until a custom sending domain is verified at resend.com/domains, Resend can only deliver to the account owner's own email. The `DOCTOR_REPORT_EMAIL` and `HOSPITAL_NOTIFY_EMAIL` variables should match that address during development.
+**Resend limitation.** Until a custom sending domain is verified at resend.com/domains, Resend can only deliver to the account owner's own email. `DOCTOR_REPORT_EMAIL` should match that address during development.
+
+**AI provider routing.** Kimi K3 is accessed through Cline's unified gateway (`api.cline.bot`) rather than direct Moonshot API access. This means one Cline API key routes to multiple providers — no separate Moonshot key needed. The `lib/kimi.ts` client uses the `openai` SDK pointed at Cline's base URL with model ID `moonshotai/kimi-k3`.
