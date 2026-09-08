@@ -23,7 +23,8 @@ import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { useIntakeStore, type ChatMessage, type IntakeTier, type IntakeLanguage } from "@/lib/store";
+import { useIntakeStore, type ChatMessage, type IntakeModel, type IntakeLanguage } from "@/lib/store";
+import { AI_PROVIDERS, type AIProviderId } from "@/lib/ai/types";
 import {
   type PatientContext,
   countCollectedFields,
@@ -40,8 +41,8 @@ function voiceLang(language: IntakeLanguage): VoiceLang {
   return language === "hi" ? "hi-IN" : "en-IN";
 }
 
-function apiEndpoint(tier: IntakeTier): string {
-  return tier === "high" ? "/api/ai-intake/high" : "/api/ai-intake/low";
+function apiEndpoint(): string {
+  return "/api/ai-intake/chat";
 }
 
 /**
@@ -116,54 +117,30 @@ function ProgressBar({ collected }: { collected: number }) {
   );
 }
 
-// ─── Tier picker ──────────────────────────────────────────────────────────────
-function TierPicker({
+// ─── Model selector ───────────────────────────────────────────────────────────
+function ModelSelector({
   selected,
   onSelect,
 }: {
-  selected: IntakeTier;
-  onSelect: (t: IntakeTier) => void;
+  selected: IntakeModel;
+  onSelect: (m: IntakeModel) => void;
 }) {
-  const tiers: {
-    id:       IntakeTier;
-    icon:     React.ElementType;
-    label:    string;
-    badge:    string;
-    features: string[];
-  }[] = [
-    {
-      id:       "low",
-      icon:     Zap,
-      label:    "Standard",
-      badge:    "Fast · English",
-      features: [
-        "Text chat only",
-        "English responses",
-        "Powered by Groq (fast)",
-      ],
-    },
-    {
-      id:       "high",
-      icon:     Sparkles,
-      label:    "Advanced",
-      badge:    "Voice · Hindi supported",
-      features: [
-        "Voice input & text",
-        "Hindi or English",
-        "Powered by Kimi K3",
-      ],
-    },
-  ];
+  const iconMap: Record<string, React.ElementType> = {
+    Zap: Zap,
+    Sparkles: Sparkles,
+    Brain: Bot,
+  };
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {tiers.map(({ id, icon: Icon, label, badge, features }) => {
-        const active = selected === id;
+    <div className="grid gap-3 sm:grid-cols-3">
+      {AI_PROVIDERS.map((provider) => {
+        const active = selected === provider.id;
+        const Icon = iconMap[provider.icon] || Zap;
         return (
           <button
-            key={id}
+            key={provider.id}
             type="button"
-            onClick={() => onSelect(id)}
+            onClick={() => onSelect(provider.id)}
             className={`flex flex-col gap-3 rounded-2xl border p-5 text-left transition-all ${
               active
                 ? "border-primary bg-primary/5 shadow-sm ring-1 ring-primary/20"
@@ -179,21 +156,25 @@ function TierPicker({
                 <Icon className="h-5 w-5" aria-hidden="true" />
               </div>
               <div>
-                <p className={`font-semibold ${active ? "text-primary" : ""}`}>{label}</p>
-                <p className="text-xs text-muted-foreground">{badge}</p>
+                <p className={`font-semibold ${active ? "text-primary" : ""}`}>{provider.name}</p>
+                <p className="text-xs text-muted-foreground">{provider.description}</p>
               </div>
               {active && (
                 <CheckCircle2 className="ml-auto h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
               )}
             </div>
-            <ul className="space-y-1">
-              {features.map((f) => (
-                <li key={f} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="h-1 w-1 rounded-full bg-current shrink-0" />
-                  {f}
-                </li>
-              ))}
-            </ul>
+            <div className="flex flex-wrap gap-1.5">
+              {provider.supportsVoice && (
+                <span className="rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">
+                  Voice
+                </span>
+              )}
+              {provider.supportsHindi && (
+                <span className="rounded-full bg-purple-50 px-2 py-0.5 text-xs text-purple-700">
+                  Hindi
+                </span>
+              )}
+            </div>
           </button>
         );
       })}
@@ -371,7 +352,7 @@ export default function AIAgentPage() {
   const router = useRouter();
 
   const {
-    tier, setTier,
+    model, setModel,
     language, setLanguage,
     fallbackOccurred, setFallbackOccurred,
     consented, setConsented,
@@ -403,9 +384,10 @@ export default function AIAgentPage() {
   const voiceInput  = useVoiceInput(currentVoiceLang);
   const voiceSpeech = useVoiceSpeech(currentVoiceLang);
 
-  // Voice available only on High tier
+  // Voice available when the selected model supports it (provider capability)
   const voiceFullySupported = voiceInput.supported && voiceSpeech.supported;
-  const voiceAvailable      = voiceFullySupported && tier === "high";
+  const isHighTier          = AI_PROVIDERS.find((p) => p.id === model)?.supportsHindi ?? false;
+  const voiceAvailable      = voiceFullySupported && isHighTier;
 
   // ── Load patient profile ──────────────────────────────────────────────────
   useEffect(() => {
@@ -469,12 +451,15 @@ export default function AIAgentPage() {
     setInputMode(m);
   };
 
-  // ── Tier switch (only before starting) ────────────────────────────────────
-  const handleTierSelect = (t: IntakeTier) => {
-    setTier(t);
-    // Force text mode when switching to Low (voice not available on Low)
-    if (t === "low") {
+  // ── Model switch (only before starting) ───────────────────────────────────
+  const handleModelSelect = (m: IntakeModel) => {
+    setModel(m);
+    const provider = AI_PROVIDERS.find((p) => p.id === m);
+    // Force text mode + English if the selected model doesn't support voice/Hindi
+    if (provider && !provider.supportsVoice) {
       setInputMode("text");
+    }
+    if (provider && !provider.supportsHindi) {
       setLanguage("en");
     }
   };
@@ -494,7 +479,7 @@ export default function AIAgentPage() {
     setApiError(null);
 
     try {
-      const endpoint = apiEndpoint(tier);
+      const endpoint = apiEndpoint();
       const res = await fetch(endpoint, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
@@ -503,7 +488,8 @@ export default function AIAgentPage() {
           conversationHistory:   [...conversation, userMsg].filter((m) => m.role === "user" || m.role === "assistant"),
           patientContext:        patientContext ?? { name: "Patient", age: null, gender: null, allergies: null, chronicConditions: null },
           currentStructuredData: data,
-          language:              tier === "high" ? language : "en",
+          language:              language,
+          preferredProvider:     model,
         }),
       });
 
@@ -555,7 +541,7 @@ export default function AIAgentPage() {
     setAiLoading(false);
     setTimeout(() => textInputRef.current?.focus(), 50);
   }, [
-    aiLoading, emergency, tier, language, conversation, patientContext, data,
+    aiLoading, emergency, model, language, conversation, patientContext, data,
     addMessage, setData, setFallbackOccurred, setRecommendedDepartment,
     setRecommendedDepartmentReason, setAlternateDepartment,
     setSuggestedInvestigations, setInvestigationsDisclaimer,
@@ -575,7 +561,7 @@ export default function AIAgentPage() {
 
     setAiLoading(true);
     try {
-      const endpoint = apiEndpoint(tier);
+      const endpoint = apiEndpoint();
       const res = await fetch(endpoint, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
@@ -583,7 +569,8 @@ export default function AIAgentPage() {
           conversationHistory:   [{ role: "user", content: "Hello, I'd like to start my intake." }],
           patientContext:        patientContext ?? { name: "Patient", age: null, gender: null, allergies: null, chronicConditions: null },
           currentStructuredData: {},
-          language:              tier === "high" ? language : "en",
+          language:              language,
+          preferredProvider:     model,
         }),
       });
       const json = await res.json() as Record<string, unknown>;
@@ -636,14 +623,14 @@ export default function AIAgentPage() {
               doctor-ready summary — no repeated basics.
             </p>
 
-            {/* ── Tier picker ─────────────────────────────────────────── */}
+            {/* ── Model selector ──────────────────────────────────────── */}
             <div className="mt-6">
-              <p className="mb-3 text-sm font-medium">Choose intake mode:</p>
-              <TierPicker selected={tier} onSelect={handleTierSelect} />
+              <p className="mb-3 text-sm font-medium">Choose AI model:</p>
+              <ModelSelector selected={model} onSelect={handleModelSelect} />
             </div>
 
-            {/* ── Language toggle (High only) ──────────────────────────── */}
-            {tier === "high" && (
+            {/* ── Language toggle (multilingual models only) ───────────── */}
+            {AI_PROVIDERS.find((p) => p.id === model)?.supportsHindi && (
               <div className="mt-4">
                 <LanguageToggle language={language} onChange={setLanguage} />
               </div>
@@ -706,22 +693,22 @@ export default function AIAgentPage() {
               mode={inputMode}
               onToggle={handleModeSwitch}
               voiceSupported={voiceFullySupported}
-              tierIsHigh={tier === "high"}
+              tierIsHigh={isHighTier}
             />
-            {tier === "high" && inputMode === "voice" && (
+            {isHighTier && inputMode === "voice" && (
               <LanguageToggle language={language} onChange={setLanguage} />
             )}
           </div>
-          {/* Tier badge */}
+          {/* Model badge */}
           <span className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${
-            tier === "high"
+            isHighTier
               ? "border-primary/20 bg-primary/10 text-primary"
               : "border-muted text-muted-foreground"
           }`}>
-            {tier === "high" ? <Sparkles className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
-            {tier === "high" ? "Advanced" : "Standard"}
+            {isHighTier ? <Sparkles className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
+            {AI_PROVIDERS.find((p) => p.id === model)?.name ?? "AI"}
             {fallbackOccurred && (
-              <span className="ml-1 text-amber-600">(using Standard)</span>
+              <span className="ml-1 text-amber-600">(fallback active)</span>
             )}
           </span>
         </div>
@@ -770,8 +757,8 @@ export default function AIAgentPage() {
                 >
                   {msg.role === "assistant" && (
                     <p className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-primary/60">
-                      {tier === "high" ? <Sparkles className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-                      {tier === "high" ? "Kimi K3" : "AI Agent"}
+                      {isHighTier ? <Sparkles className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
+                      {AI_PROVIDERS.find((p) => p.id === model)?.name ?? "AI Assistant"}
                       {fallbackOccurred && <span className="text-amber-500">(Standard)</span>}
                       {voiceSpeech.speaking && inputMode === "voice" && (
                         <Volume2 className="h-3 w-3 animate-pulse text-primary ml-1" />

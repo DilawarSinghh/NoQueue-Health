@@ -15,8 +15,8 @@ Most government hospital visits in India involve three separate queues just to f
 ### For patients
 
 - **Browse & book agents** — search vetted human documentation agents by department (40+ Safdarjung departments), price, and star rating. One tap to send a booking request.
-- **AI intake** — a conversational chat that collects chief complaint, symptom history, severity, and relevant background. Two tiers: **Low** (fast text-only, English, Groq) and **High** (voice + Hindi support, Kimi K3 via Cline gateway, with automatic fallback to Low on failure). The AI never re-asks anything already in your profile (age, gender, allergies, chronic conditions). When complete, it generates a formatted clinical summary PDF and emails it to the clinic.
-- **Intake history** — view past intake sessions with tier used, fallback status, recommended department, and re-download the PDF report.
+- **AI intake** — a conversational case-taking chat that collects chief complaint, symptom history, severity, and relevant background. The patient picks the AI model (**MiniMax M3**, **Google Gemini**, or **Groq**) before starting; if the chosen provider fails the request automatically falls back to the next configured provider mid-session (with a friendly notice — the conversation continues uninterrupted). Voice input/output and Hindi/Hinglish are supported on every model that can handle them. The AI never re-asks anything already in your profile (age, gender, allergies, chronic conditions). When complete, it generates a formatted clinical summary PDF and emails it to the clinic.
+- **Intake history** — view past intake sessions with model used, fallback status, recommended department, and re-download the PDF report.
 - **Department routing** — once the AI has enough information it recommends which department to go to first, with a plain-language reason. If it's uncertain it gives a primary and a secondary option.
 - **Emergency detection** — if anything the patient describes sounds urgent (chest pain, difficulty breathing, severe bleeding, stroke signs, etc.) the chat stops immediately and shows an emergency banner with a direct call link.
 - **Bookings tracker** — see all past and current bookings and their status (pending / accepted / completed / cancelled / declined).
@@ -165,8 +165,7 @@ app/
     profile/                  # Edit patient profile
   api/
     ai-intake/
-      low/route.ts          # Groq intake endpoint (text, English only)
-      high/route.ts         # Kimi K3 intake endpoint (voice, Hindi/English, falls back to Low)
+      chat/route.ts         # Unified intake endpoint (provider-agnostic with fallback)
     generate-report/route.ts  # PDF + Supabase Storage + Resend
     site-assistant/route.ts   # Site navigation assistant
     bookings/route.ts         # Create booking / list bookings
@@ -187,13 +186,17 @@ components/
     SignOutButton.tsx
 
 lib/
-  store.ts                    # Zustand intake session store (tier, language, fallback state)
+  store.ts                    # Zustand intake session store (model, language, fallback state)
   schema.ts                   # Zod schemas + field definitions for AI intake
   pdfTemplate.tsx             # @react-pdf report document
-  groq.ts                     # Groq client singleton (Low tier)
-  kimi.ts                     # Kimi K3 client singleton (High tier, via Cline gateway)
-  intakePrompt.ts             # Shared prompt builder + parser used by both routes
+  intakePrompt.ts             # Shared prompt builder + parser (provider-agnostic)
   supabase.ts                 # Supabase service-role client (server only)
+  ai/
+    types.ts                  # Common AI types + provider metadata
+    router.ts                 # Provider router with automatic fallback
+    minimax.ts                # MiniMax M3 provider (via xkiro.com)
+    gemini.ts                 # Google Gemini provider
+    groq.ts                   # Groq provider
   supabase/                   # Cookie-backed client + server + middleware helpers
   hooks/
     useVoiceInput.ts          # Web Speech API — recognition (reactive lang param)
@@ -227,8 +230,12 @@ Required variables:
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project settings |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project settings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project settings — **never expose to client** |
-| `GROQ_API_KEY` | https://console.groq.com/keys |
-| `CLINE_API_KEY` | Cline API key from app.cline.bot — optional; High tier auto-falls-back to Groq if absent |
+| `XKIRO_API_KEY` | xkiro.com — for MiniMax M3 provider |
+| `XKIRO_BASE_URL` | `https://api.xkiro.com/v1` (default, can override) |
+| `MINIMAX_MODEL` | `minimax/minimax-m3:free` (default, can override) |
+| `GEMINI_API_KEY` | https://aistudio.google.com/app/apikey — for Google Gemini provider |
+| `GEMINI_MODEL` | `gemini-2.0-flash` (default, can override) |
+| `GROQ_API_KEY` | https://console.groq.com/keys — for Groq provider (fallback) |
 | `RESEND_API_KEY` | https://resend.com/api-keys |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your Vercel URL in prod |
 | `DOCTOR_REPORT_EMAIL` | Email address that receives intake PDFs via Resend |

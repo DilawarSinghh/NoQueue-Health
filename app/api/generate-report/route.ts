@@ -18,8 +18,8 @@ const requestSchema = z.object({
   recommendedDepartmentReason: z.string().optional(),
   suggestedInvestigations:     z.array(z.string()).max(5).default([]),
   investigationsDisclaimer:    z.string().optional(),
-  // Tier metadata — stored in intake_records for history page
-  tier:                        z.enum(["low", "high"]).default("low"),
+  // Model metadata — stored in intake_records for history page
+  model:                       z.enum(["minimax-m3", "gemini", "groq"]).default("minimax-m3"),
   fallbackOccurred:            z.boolean().default(false),
 });
 
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
   const {
     intakeData, patientName, patientId,
     recommendedDepartment, suggestedInvestigations, investigationsDisclaimer,
-    tier, fallbackOccurred,
+    model, fallbackOccurred,
   } = parsed.data;
 
   // Ensure the calling user owns this intake
@@ -157,7 +157,7 @@ export async function POST(request: Request) {
       structured_data:         intakeData,
       clinical_summary:        clinicalSummary,
       pdf_url:                 fileName,   // store path, not signed URL (URL expires)
-      tier,
+      tier:                    model,      // stores the model used (minimax-m3, gemini, groq)
       fallback_occurred:       fallbackOccurred,
       recommended_department:  recommendedDepartment ?? intakeData.doctorOrDepartment ?? null,
     });

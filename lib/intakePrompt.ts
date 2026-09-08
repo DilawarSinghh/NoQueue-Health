@@ -3,7 +3,7 @@
  *
  * Shared intake logic used by BOTH tiers:
  *   - app/api/ai-intake/low/route.ts  (Groq)
- *   - app/api/ai-intake/high/route.ts (Kimi K3)
+ *   - app/api/ai-intake/chat/route.ts (unified endpoint — MiniMax M3 / Gemini / Groq)
  *
  * Exports:
  *   buildSystemPrompt()   — constructs the full system prompt string

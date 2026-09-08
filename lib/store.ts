@@ -6,8 +6,8 @@ import type { Department } from "@/lib/constants/hospital";
 // Data lives ONLY here until the patient explicitly confirms on the review
 // screen — never in URL params, never in localStorage in v1.
 
-export type IntakeTier     = "low" | "high";
-export type IntakeLanguage = "en" | "hi";
+export type IntakeModel    = "minimax-m3" | "gemini" | "groq";
+export type IntakeLanguage  = "en" | "hi";
 
 export interface ChatMessage {
   role:    "user" | "assistant" | "system";
@@ -15,18 +15,19 @@ export interface ChatMessage {
 }
 
 interface IntakeStore {
-  // ── Tier + language ─────────────────────────────────────────────────────
-  /** Which model tier the patient chose for this session. */
-  tier: IntakeTier;
-  setTier: (tier: IntakeTier) => void;
+  // ── Model + language ───────────────────────────────────────────────────
+  /** Which AI model the patient chose for this session. */
+  model: IntakeModel;
+  setModel: (model: IntakeModel) => void;
 
   /** Conversation language — 'hi' only available on High tier. */
   language: IntakeLanguage;
   setLanguage: (lang: IntakeLanguage) => void;
 
   /**
-   * True if Kimi K3 failed and the session fell back to Groq mid-session.
-   * Stored here so it can be passed to intake_records on save.
+   * True if the selected AI provider failed and the session fell back to
+   * another provider mid-session. Stored here so it can be passed to
+   * intake_records on save.
    */
   fallbackOccurred: boolean;
   setFallbackOccurred: (v: boolean) => void;
@@ -73,15 +74,15 @@ interface IntakeStore {
   setInvestigationsDisclaimer: (text: string) => void;
 
   // ── Reset ─────────────────────────────────────────────────────────────────
-  /** Full reset for a new intake session. Tier/language are preserved so the
+  /** Full reset for a new intake session. Model/language are preserved so the
    *  user doesn't have to re-pick them if they start over. */
   reset: () => void;
 }
 
 export const useIntakeStore = create<IntakeStore>((set, get) => ({
-  // ── Tier + language ─────────────────────────────────────────────────────
-  tier:               "low",
-  setTier:            (tier)    => set({ tier }),
+  // ── Model + language ───────────────────────────────────────────────────
+  model:              "minimax-m3",
+  setModel:           (model)   => set({ model }),
 
   language:           "en",
   setLanguage:        (lang)    => set({ language: lang }),
@@ -132,9 +133,9 @@ export const useIntakeStore = create<IntakeStore>((set, get) => ({
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   reset: () => {
-    const { tier, language } = get(); // preserve tier/language across restarts
+    const { model, language } = get(); // preserve model/language across restarts
     set({
-      tier,
+      model,
       language,
       fallbackOccurred:            false,
       consented:                   false,

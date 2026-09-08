@@ -16,13 +16,15 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { GlassCard } from "@/components/GlassCard";
 import { Button } from "@/components/ui/button";
+import { AI_PROVIDERS, type AIProviderId } from "@/lib/ai/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface IntakeRecord {
   id:               string;
   created_at:       string;
-  tier:             "low" | "high" | null;
+  /** Legacy rows: "low"/"high". New rows: provider id ("minimax-m3" | "gemini" | "groq"). */
+  tier:             string | null;
   fallback_occurred: boolean | null;
   structured_data:  Record<string, string> | null;
   clinical_summary: string | null;
@@ -104,16 +106,18 @@ function RecordCard({ record }: { record: IntakeRecord }) {
 
           {/* Tags row */}
           <div className="mt-2 flex flex-wrap gap-2">
-            {/* Tier badge */}
+            {/* Model badge */}
             <span
               className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-                tier === "high"
+                tier && AI_PROVIDERS.some((p) => p.id === tier)
                   ? "border-primary/20 bg-primary/10 text-primary"
-                  : "border-muted bg-muted/30 text-muted-foreground"
+                  : tier === "groq"
+                    ? "border-teal-200 bg-teal-50 text-teal-700"
+                    : "border-muted bg-muted/30 text-muted-foreground"
               }`}
             >
-              {tier === "high" ? <Sparkles className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
-              {tier === "high" ? "Advanced (Kimi K3)" : "Standard (Groq)"}
+              {tier === "groq" ? <Zap className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+              {AI_PROVIDERS.find((p) => p.id === tier)?.name ?? "AI"}
             </span>
 
             {/* Fallback badge */}

@@ -42,6 +42,7 @@ export default function ReviewPage() {
   const {
     data, setData,
     patientContext,
+    model,
     clinicalSummary, setClinicalSummary,
     pdfUrl, setPdfUrl,
     recommendedDepartment,
@@ -133,8 +134,8 @@ export default function ReviewPage() {
           recommendedDepartmentReason: recommendedDepartmentReason ?? "",
           suggestedInvestigations:     suggestedInvestigations ?? [],
           investigationsDisclaimer:    investigationsDisclaimer ?? "",
-          // Tier metadata for intake_records
-          tier:             useIntakeStore.getState().tier,
+          // Model metadata for intake_records
+          model:            model,
           fallbackOccurred: useIntakeStore.getState().fallbackOccurred,
         }),
       });
