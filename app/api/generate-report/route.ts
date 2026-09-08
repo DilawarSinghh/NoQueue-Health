@@ -26,7 +26,7 @@ async function generateClinicalSummary(
   if (!process.env.GROQ_API_KEY) throw new Error("GROQ_API_KEY not set");
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-  const MODELS = ["llama-3.3-70b-versatile", "llama3-70b-8192", "mixtral-8x7b-32768"];
+  const MODELS = ["openai/gpt-oss-120b", "qwen/qwen3.6-27b"];
 
   const prompt = `Using the structured intake data below, write a clinical summary for a doctor.
 

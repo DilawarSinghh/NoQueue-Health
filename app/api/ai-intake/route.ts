@@ -20,11 +20,13 @@ function getGroq() {
   return new Groq({ apiKey: process.env.GROQ_API_KEY });
 }
 
-// Models tried in order — first success wins
+// Models tried in order — first success wins.
+// Primary: openai/gpt-oss-120b (Groq's recommended replacement for llama-3.3-70b-versatile)
+// Fallback: qwen/qwen3.6-27b (Groq's secondary recommendation)
+// Source: console.groq.com/docs/deprecations
 const MODELS = [
-  "llama-3.3-70b-versatile",
-  "llama3-70b-8192",
-  "mixtral-8x7b-32768",
+  "openai/gpt-oss-120b",
+  "qwen/qwen3.6-27b",
 ];
 
 // ─── System prompt ────────────────────────────────────────────────────────────

@@ -24,10 +24,11 @@ Your rules:
 5. Never reference or reveal specific patient intake_records content.`;
 
 // ─── Models ───────────────────────────────────────────────────────────────────
+// Models tried in order — first success wins.
+// Source: console.groq.com/docs/deprecations
 const MODELS = [
-  "llama-3.3-70b-versatile",
-  "llama3-70b-8192",
-  "mixtral-8x7b-32768",
+  "openai/gpt-oss-120b",
+  "qwen/qwen3.6-27b",
 ];
 
 // ─── Request schema ───────────────────────────────────────────────────────────
