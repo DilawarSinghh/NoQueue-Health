@@ -81,28 +81,29 @@ Ten tables, Row Level Security on all of them:
 - `0003_ratings_and_bookings.sql` — adds `declined` status to bookings, creates `booking_ratings` table with RLS.
 - `0004_fix_rls_and_realtime.sql` — sets `REPLICA IDENTITY FULL` on realtime tables, re-asserts correct RLS policies for threads/messages/notifications.
 - `0005_intake_tier.sql` — adds `tier`, `fallback_occurred`, and `recommended_department` columns to `intake_records`.
+- `0006_intake_tier_providers.sql` — widens the `tier` check constraint to accept provider IDs (`minimax-m3`, `gemini`, `groq`) alongside legacy `low`/`high`.
 
-### AI (Groq + Kimi K3 via Cline)
+### AI (MiniMax M3 / Gemini / Groq)
 
-Two separate AI features. The intake has two selectable tiers.
+Two separate AI features. The intake lets the patient choose their AI model.
 
-**AI Intake — Low tier** (`/api/ai-intake/low`)
+**AI Intake — Groq** (still available as a model choice)
 - Text-only, English only.
 - Uses Groq (`openai/gpt-oss-120b` → `qwen/qwen3.6-27b` fallback chain).
-- Same JSON contract as High tier.
+- Same JSON contract as the other providers.
 
-**AI Intake — High tier** (`/api/ai-intake/high`)
-- Voice input + text; Hindi and English supported.
-- Uses Kimi K3 (`moonshotai/kimi-k3`) via **Cline's unified gateway** (`https://api.cline.bot/api/v1`) using a Cline API key from `app.cline.bot`.
-- Automatic fallback to Low tier if Kimi K3 fails (error logged with HTTP status, patient sees a non-blocking amber notice in chat, conversation continues on Groq).
+**AI Intake** (`/api/ai-intake/chat` — unified endpoint)
+- The patient picks a model before starting: **MiniMax M3**, **Google Gemini**, or **Groq**.
+- Voice input + text; Hindi and English supported on models that can handle them.
+- Automatic provider fallback if the chosen model fails (error logged with HTTP status server-side, patient sees a non-blocking amber notice in chat, conversation continues on the next provider without restarting).
 - System prompt detects and mirrors the patient's language; structured field values stay in English regardless.
 
-Both tiers share identical logic from `lib/intakePrompt.ts`:
+All providers share identical logic from `lib/intakePrompt.ts`:
 - System prompt builder (with optional Hindi language instruction)
 - JSON response parser + department name normalisation
 - Medication blocklist safety filter on `suggestedInvestigations`
 
-The patient picks their tier on the pre-start screen. No mid-session switching; resetting preserves the tier choice.
+The patient picks their model on the pre-start screen. No mid-session switching; resetting preserves the model choice.
 
 **Intake history** (`/patient/ai-agent/history`)
 - Lists past intake sessions: date, tier used, fallback status, recommended department.
@@ -237,6 +238,7 @@ Required variables:
 | `GEMINI_MODEL` | `gemini-2.0-flash` (default, can override) |
 | `GROQ_API_KEY` | https://console.groq.com/keys — for Groq provider (fallback) |
 | `RESEND_API_KEY` | https://resend.com/api-keys |
+| `RESEND_FROM_EMAIL` | Optional. Defaults to `NoQueue Health <onboarding@resend.dev>` |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your Vercel URL in prod |
 | `DOCTOR_REPORT_EMAIL` | Email address that receives intake PDFs via Resend |
 
@@ -247,6 +249,7 @@ supabase/migrations/0002_hospital_lockdown.sql
 supabase/migrations/0003_ratings_and_bookings.sql
 supabase/migrations/0004_fix_rls_and_realtime.sql
 supabase/migrations/0005_intake_tier.sql
+supabase/migrations/0006_intake_tier_providers.sql
 
 # 4. Supabase Auth — Authentication > Providers > Google
 #    Add redirect URLs:
@@ -268,7 +271,8 @@ npm run dev
 - [x] Phase 5 — AI intake (text + voice), PDF generation, Resend email
 - [x] Phase 6 — Voice mode (Web Speech API — input + synthesis)
 - [x] Phase 7 — Site-wide assistant
-- [x] Phase 7.5 — Tiered AI intake (Low/High), voice + Hindi, Cline gateway, intake history, fallback behavior
+- [x] Phase 7.5 — Tiered AI intake, voice + Hindi, intake history, fallback behavior
+- [x] Phase 8 — Provider-agnostic AI architecture (MiniMax M3 / Gemini / Groq), model picker, unified /api/ai-intake/chat endpoint
 - [ ] Phase 8 — Final mobile polish + comprehensive error-state pass
 
 ---
@@ -287,4 +291,4 @@ npm run dev
 
 **Resend limitation.** Until a custom sending domain is verified at resend.com/domains, Resend can only deliver to the account owner's own email. `DOCTOR_REPORT_EMAIL` should match that address during development.
 
-**AI provider routing.** Kimi K3 is accessed through Cline's unified gateway (`api.cline.bot`) rather than direct Moonshot API access. This means one Cline API key routes to multiple providers — no separate Moonshot key needed. The `lib/kimi.ts` client uses the `openai` SDK pointed at Cline's base URL with model ID `moonshotai/kimi-k3`.
+**AI provider routing.** AI intake runs through a provider-agnostic abstraction in `lib/ai/` with three providers: **MiniMax M3** (via xkiro.com's OpenAI-compatible endpoint), **Google Gemini** (official SDK, server-side only), and **Groq** (existing integration). The patient picks a model in the UI; the router (`lib/ai/router.ts`) tries the chosen provider first and falls back through the remaining configured providers on failure, attaching a friendly notice. No provider-specific logic exists outside `lib/ai/`.

@@ -32,7 +32,7 @@ import { DEPARTMENTS } from "@/lib/constants/hospital";
  * @param ctx           Patient background — injected so the model never
  *                      re-asks known fields.
  * @param language      'en' | 'hi' — instructs the model which language to
- *                      use. 'hi' is only meaningful for the High tier (Kimi K3).
+ *                      use. 'hi' enables the Hindi language instruction in the prompt.
  *                      Low tier always receives 'en'.
  */
 export function buildSystemPrompt(
