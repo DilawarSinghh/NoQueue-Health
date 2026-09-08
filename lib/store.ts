@@ -49,6 +49,14 @@ interface IntakeStore {
   alternateDepartment: Department | null;
   setAlternateDepartment: (dept: Department | null) => void;
 
+  /** Suggested diagnostic investigations (2–5 items, empty if vague/emergency). */
+  suggestedInvestigations: string[];
+  setSuggestedInvestigations: (items: string[]) => void;
+
+  /** Disclaimer text to display alongside investigations. */
+  investigationsDisclaimer: string;
+  setInvestigationsDisclaimer: (text: string) => void;
+
   /** Reset everything for a new intake session. */
   reset: () => void;
 }
@@ -82,6 +90,12 @@ export const useIntakeStore = create<IntakeStore>((set) => ({
   alternateDepartment:            null,
   setAlternateDepartment:         (dept)   => set({ alternateDepartment: dept }),
 
+  suggestedInvestigations:        [],
+  setSuggestedInvestigations:     (items)  => set({ suggestedInvestigations: items }),
+
+  investigationsDisclaimer:       "",
+  setInvestigationsDisclaimer:    (text)   => set({ investigationsDisclaimer: text }),
+
   reset: () =>
     set({
       consented:                   false,
@@ -93,5 +107,7 @@ export const useIntakeStore = create<IntakeStore>((set) => ({
       recommendedDepartment:       null,
       recommendedDepartmentReason: "",
       alternateDepartment:         null,
+      suggestedInvestigations:     [],
+      investigationsDisclaimer:    "",
     }),
 }));

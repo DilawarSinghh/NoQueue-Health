@@ -148,7 +148,56 @@ export function normalizeDepartment(raw: string | undefined | null): Department 
   return "Medicine";
 }
 
-// ─── AI response shape ────────────────────────────────────────────────────────
+// ─── Medication blocklist safety filter ──────────────────────────────────────
+// Applied server-side to suggestedInvestigations before any item reaches the
+// client. Strips items that contain medication-like patterns, even if the model
+// drifts from the system prompt instruction. Never blocks the whole response —
+// only filters offending items individually.
+//
+// Patterns matched (case-insensitive):
+//   - Dosage units: mg, mcg, µg, ml, iu, units/unit
+//   - Formulation words: tablet, capsule, syrup, injection, infusion, patch,
+//     suppository, inhaler, drops, gel, cream, ointment, lotion, suspension
+//   - Prescription/pharmacy signals: dose, dosage, prescribed, prescription,
+//     drug, medication, medicine, pill, rx
+//   - Common drug name fragments (broad catch): -cillin, -mycin, -olol, -pril,
+//     -sartan, -statin, -zole, -oxacin, -pam, -zepam, -codone, -morphine,
+//     metformin, paracetamol, ibuprofen, aspirin, insulin, warfarin, heparin
+
+const MEDICATION_BLOCKLIST_PATTERNS: RegExp[] = [
+  // Dosage units
+  /\b\d+\s*(mg|mcg|µg|ml|iu)\b/i,
+  /\bunits?\b/i,
+  // Formulation words
+  /\b(tablet|capsule|syrup|injection|infusion|patch|suppository|inhaler|drops|gel|cream|ointment|lotion|suspension)\b/i,
+  // Prescription signals
+  /\b(dose|dosage|prescribed|prescription|drug|medication|medicine|pill|rx)\b/i,
+  // Drug name suffixes (common pharmacological endings)
+  /-(cillin|mycin|olol|pril|sartan|statin|zole|oxacin|pam|zepam|codone)\b/i,
+  // Specific common drugs
+  /\b(morphine|paracetamol|acetaminophen|ibuprofen|aspirin|naproxen|insulin|warfarin|heparin|metformin|amoxicillin|azithromycin|ciprofloxacin|omeprazole|pantoprazole|salbutamol|albuterol|prednisolone|prednisone|dexamethasone|amlodipine|atenolol|metoprolol|losartan|lisinopril|atorvastatin|simvastatin|cetirizine|loratadine|diazepam|alprazolam|tramadol|codeine|hydrocodone|oxycodone)\b/i,
+];
+
+/**
+ * Filters a list of suggested investigation strings, removing any item that
+ * matches a medication-related pattern. Logs each removal to the server console.
+ *
+ * @param items - Raw list from the AI
+ * @returns Cleaned list with any medication-like items removed
+ */
+export function filterMedicationItems(items: string[]): string[] {
+  return items.filter((item) => {
+    const isMedication = MEDICATION_BLOCKLIST_PATTERNS.some((re) => re.test(item));
+    if (isMedication) {
+      console.warn(
+        `[ai-intake] BLOCKLIST: Stripped medication-like item from suggestedInvestigations: "${item}"`
+      );
+    }
+    return !isMedication;
+  });
+}
+
+// ─── AI response shape ─────────────────────────────────────────────────────────
 // The Groq route returns one of these two shapes:
 
 export const emergencyResponseSchema = z.object({
@@ -168,6 +217,9 @@ export const normalResponseSchema = z.object({
   recommendedDepartment:       z.string().optional(),
   recommendedDepartmentReason: z.string().optional(),
   alternateDepartment:         z.string().optional(),
+  // Suggested investigations — only present when isComplete = true
+  suggestedInvestigations:     z.array(z.string()).optional(),
+  investigationsDisclaimer:    z.string().optional(),
 });
 
 export type AIResponse =

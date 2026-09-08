@@ -226,6 +226,8 @@ export default function AIAgentPage() {
     setRecommendedDepartment,
     setRecommendedDepartmentReason,
     setAlternateDepartment,
+    setSuggestedInvestigations,
+    setInvestigationsDisclaimer,
     reset,
   } = useIntakeStore();
 
@@ -365,6 +367,12 @@ export default function AIAgentPage() {
           setRecommendedDepartmentReason(json.recommendedDepartmentReason ?? "");
           setAlternateDepartment(json.alternateDepartment ?? null);
         }
+        // Save suggested investigations (blocklist already applied server-side)
+        setSuggestedInvestigations(json.suggestedInvestigations ?? []);
+        setInvestigationsDisclaimer(
+          json.investigationsDisclaimer ??
+          "These are commonly associated tests, not a prescription — your doctor will decide what's actually needed based on examination."
+        );
         setIsComplete(true);
       }
 

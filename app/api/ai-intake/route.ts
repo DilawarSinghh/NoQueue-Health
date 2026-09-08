@@ -5,6 +5,7 @@ import {
   emergencyResponseSchema,
   normalResponseSchema,
   normalizeDepartment,
+  filterMedicationItems,
   type AIResponse,
   type IntakeDataPartial,
   type PatientContext,
@@ -88,7 +89,20 @@ Rules for this recommendation:
 - The department name MUST exactly match one of the values in the list above — do not paraphrase or abbreviate.
 
 When isComplete is true, extend your JSON with these fields:
-{"emergency":false,"updatedData":{...},"nextQuestion":null,"isComplete":true,"recommendedDepartment":"<exact dept name>","recommendedDepartmentReason":"<1-2 sentences for patient>","alternateDepartment":"<exact dept name or omit>"}`;
+{"emergency":false,"updatedData":{...},"nextQuestion":null,"isComplete":true,"recommendedDepartment":"<exact dept name>","recommendedDepartmentReason":"<1-2 sentences for patient>","alternateDepartment":"<exact dept name or omit>"}
+
+SUGGESTED INVESTIGATIONS (add ONLY when isComplete is true, NEVER when emergency is true):
+Also suggest COMMONLY RELEVANT DIAGNOSTIC TESTS a doctor might consider ordering, given the reported symptoms. This is informational context for the doctor's convenience — NOT an instruction, prescription, or diagnosis.
+
+Rules for suggested investigations:
+- Frame every suggestion as a test name only (e.g., "CBC", "Chest X-ray", "ECG") — no framing text, no "you need", no "you should". The UI adds the framing.
+- List 2-5 relevant tests maximum. If symptoms are too vague or genuinely unclear, return an empty array — that is correct and safe.
+- NEVER include any medication, drug name, dosage, or treatment of any kind. Only diagnostic tests and investigations. If you find yourself about to include a medication name, stop — that is entirely out of scope.
+- If the EMERGENCY RULE triggered, do NOT include suggestedInvestigations — set it to an empty array.
+- You MUST include the exact disclaimer string: "These are commonly associated tests, not a prescription — your doctor will decide what's actually needed based on examination."
+
+Extend your JSON further when isComplete is true:
+{"emergency":false,"updatedData":{...},"nextQuestion":null,"isComplete":true,"recommendedDepartment":"...","recommendedDepartmentReason":"...","alternateDepartment":"...","suggestedInvestigations":["Test 1","Test 2"],"investigationsDisclaimer":"These are commonly associated tests, not a prescription — your doctor will decide what's actually needed based on examination."}`;
 }
 
 // ─── Request body schema ──────────────────────────────────────────────────────
@@ -128,13 +142,21 @@ function parseAIOutput(raw: string): AIResponse | null {
   if (norm.success) {
     const result = norm.data;
     // Normalise department fields if the intake is complete.
-    // The AI might return abbreviations or slight rewording — normalizeDepartment()
-    // fuzzy-matches against the fixed DEPARTMENTS list and falls back to "Medicine".
     if (result.isComplete && result.recommendedDepartment) {
       result.recommendedDepartment = normalizeDepartment(result.recommendedDepartment);
       if (result.alternateDepartment) {
         result.alternateDepartment = normalizeDepartment(result.alternateDepartment);
       }
+    }
+    // Apply medication blocklist to investigations — strip any item that looks
+    // like a drug/dose even if the model drifted from the system prompt.
+    if (result.isComplete && result.suggestedInvestigations?.length) {
+      result.suggestedInvestigations = filterMedicationItems(result.suggestedInvestigations);
+    }
+    // Ensure disclaimer is always present when investigations are returned
+    if (result.isComplete && result.suggestedInvestigations?.length && !result.investigationsDisclaimer) {
+      result.investigationsDisclaimer =
+        "These are commonly associated tests, not a prescription — your doctor will decide what's actually needed based on examination.";
     }
     return result;
   }
@@ -181,7 +203,7 @@ export async function POST(request: Request) {
         model,
         messages,
         temperature:       0.3,
-        max_tokens:        512,
+        max_tokens:        768,
         response_format:   { type: "json_object" },
       });
 

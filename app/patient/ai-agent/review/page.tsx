@@ -8,6 +8,7 @@ import {
   Compass,
   Download,
   FileText,
+  FlaskConical,
   Loader2,
   RefreshCw,
   Stethoscope,
@@ -46,6 +47,8 @@ export default function ReviewPage() {
     recommendedDepartment,
     recommendedDepartmentReason,
     alternateDepartment,
+    suggestedInvestigations,
+    investigationsDisclaimer,
     reset,
   } = useIntakeStore();
 
@@ -129,6 +132,8 @@ export default function ReviewPage() {
           // Pass through for the PDF — the generate-report route will embed it
           recommendedDepartment:       confirmedDept,
           recommendedDepartmentReason: recommendedDepartmentReason ?? "",
+          suggestedInvestigations:     suggestedInvestigations ?? [],
+          investigationsDisclaimer:    investigationsDisclaimer ?? "",
         }),
       });
 
@@ -307,6 +312,39 @@ export default function ReviewPage() {
             This is a suggested starting point based on what you&apos;ve described, not a diagnosis.
             The doctor you see may refer you elsewhere after evaluation.
           </p>
+        </GlassCard>
+      )}
+
+      {/* ── Suggested investigations card — only shown when list is non-empty ── */}
+      {suggestedInvestigations && suggestedInvestigations.length > 0 && (
+        <GlassCard className="border border-sky-200 bg-sky-50/60 p-6">
+          <div className="mb-3 flex items-center gap-2">
+            <FlaskConical className="h-5 w-5 text-sky-600" aria-hidden="true" />
+            <h2 className="font-semibold text-sky-700">Tests Commonly Considered</h2>
+          </div>
+
+          <p className="mb-3 text-xs text-muted-foreground">
+            For your doctor&apos;s reference — based on what you&apos;ve described.
+          </p>
+
+          {/* Chip list */}
+          <ul className="flex flex-wrap gap-2" aria-label="Suggested investigations">
+            {suggestedInvestigations.map((test) => (
+              <li
+                key={test}
+                className="rounded-full border border-sky-200 bg-white/80 px-3 py-1 text-sm font-medium text-sky-800"
+              >
+                {test}
+              </li>
+            ))}
+          </ul>
+
+          {/* Disclaimer — mandatory, always shown */}
+          {investigationsDisclaimer && (
+            <p className="mt-4 text-xs italic text-muted-foreground">
+              {investigationsDisclaimer}
+            </p>
+          )}
         </GlassCard>
       )}
 

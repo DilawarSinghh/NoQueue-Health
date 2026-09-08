@@ -16,6 +16,8 @@ const requestSchema = z.object({
   patientId:                   z.string().uuid(),
   recommendedDepartment:       z.string().optional(),
   recommendedDepartmentReason: z.string().optional(),
+  suggestedInvestigations:     z.array(z.string()).max(5).default([]),
+  investigationsDisclaimer:    z.string().optional(),
 });
 
 // ─── Groq — generate clinical summary ────────────────────────────────────────
@@ -90,7 +92,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { intakeData, patientName, patientId, recommendedDepartment } = parsed.data;
+  const { intakeData, patientName, patientId, recommendedDepartment, suggestedInvestigations, investigationsDisclaimer } = parsed.data;
 
   // Ensure the calling user owns this intake
   if (user.id !== patientId) {
@@ -107,11 +109,13 @@ export async function POST(request: Request) {
     // unknown to satisfy the strict type mismatch between pdf-renderer and React.
     const pdfBuffer = await renderToBuffer(
       createElement(IntakePdfDocument, {
-        data:                   intakeData,
+        data:                    intakeData,
         clinicalSummary,
         patientName,
         generatedAt,
-        recommendedDepartment:  recommendedDepartment ?? intakeData.doctorOrDepartment,
+        recommendedDepartment:   recommendedDepartment ?? intakeData.doctorOrDepartment,
+        suggestedInvestigations: suggestedInvestigations.length > 0 ? suggestedInvestigations : undefined,
+        investigationsDisclaimer: investigationsDisclaimer || undefined,
       }) as unknown as Parameters<typeof renderToBuffer>[0]
     );
 

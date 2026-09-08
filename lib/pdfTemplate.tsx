@@ -105,12 +105,16 @@ export function IntakePdfDocument({
   patientName,
   generatedAt,
   recommendedDepartment,
+  suggestedInvestigations,
+  investigationsDisclaimer,
 }: {
-  data:                    IntakeData;
-  clinicalSummary:         string;
-  patientName:             string;
-  generatedAt:             string;
-  recommendedDepartment?:  string;
+  data:                      IntakeData;
+  clinicalSummary:           string;
+  patientName:               string;
+  generatedAt:               string;
+  recommendedDepartment?:    string;
+  suggestedInvestigations?:  string[];
+  investigationsDisclaimer?: string;
 }) {
   return (
     <Document
@@ -146,6 +150,25 @@ export function IntakePdfDocument({
                 Patient-confirmed starting point for this visit. Not a diagnosis — the attending clinician may refer elsewhere after evaluation.
               </Text>
             </View>
+          </>
+        )}
+
+        {/* Tests commonly considered — only included when list is non-empty */}
+        {suggestedInvestigations && suggestedInvestigations.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Tests Commonly Considered</Text>
+            <View style={{ marginBottom: 4 }}>
+              {suggestedInvestigations.map((test, i) => (
+                <Text key={i} style={{ ...styles.value, marginBottom: 4 }}>
+                  {`\u2022  ${test}`}
+                </Text>
+              ))}
+            </View>
+            {investigationsDisclaimer && (
+              <Text style={{ ...styles.label, fontStyle: "italic", marginBottom: 12 }}>
+                {investigationsDisclaimer}
+              </Text>
+            )}
           </>
         )}
 
