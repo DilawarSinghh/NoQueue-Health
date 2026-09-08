@@ -82,6 +82,7 @@ Ten tables, Row Level Security on all of them:
 - `0004_fix_rls_and_realtime.sql` — sets `REPLICA IDENTITY FULL` on realtime tables, re-asserts correct RLS policies for threads/messages/notifications.
 - `0005_intake_tier.sql` — adds `tier`, `fallback_occurred`, and `recommended_department` columns to `intake_records`.
 - `0006_intake_tier_providers.sql` — widens the `tier` check constraint to accept provider IDs (`minimax-m3`, `gemini`, `groq`) alongside legacy `low`/`high`.
+- `ALL_MIGRATIONS.sql` — **not a numbered migration**: a convenience file concatenating 0001 → 0006 in order, for one-shot setup of a fresh database. Do not use it to upgrade a production database with existing intake data (0001 drops `intake_records`).
 
 ### AI (MiniMax M3 / Gemini / Groq)
 
@@ -244,6 +245,13 @@ Required variables:
 
 ```bash
 # 3. Database — run in Supabase SQL Editor (or supabase db push)
+#
+#    OPTION A (recommended for a FRESH database): run the single combined file
+#    supabase/migrations/ALL_MIGRATIONS.sql
+#    ...which executes 0001 -> 0006 in the correct order in one go.
+#
+#    OPTION B (existing database / upgrades): run only the numbered
+#    migrations you haven't applied yet, in order:
 supabase/migrations/0001_initial_schema.sql
 supabase/migrations/0002_hospital_lockdown.sql
 supabase/migrations/0003_ratings_and_bookings.sql
