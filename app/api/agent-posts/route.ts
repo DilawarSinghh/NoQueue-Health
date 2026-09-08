@@ -29,6 +29,13 @@ export async function GET(request: Request) {
 
   // Build query — service role bypasses RLS so we can join agent_profiles
   // safely, but we select ONLY the safe columns explicitly.
+  //
+  // NOTE: agent_posts has NO direct FK to agent_profiles — the FK chain is
+  // agent_posts.agent_id → profiles.id ← agent_profiles.user_id. PostgREST
+  // cannot infer a direct relationship, so we embed THROUGH profiles:
+  // agent_posts → profiles → agent_profiles. The response is then reshaped
+  // below to keep the flat { ...post, profiles, agent_profiles } contract
+  // the frontend expects.
   let query = admin
     .from("agent_posts")
     .select(
@@ -36,13 +43,13 @@ export async function GET(request: Request) {
        profiles!agent_posts_agent_id_fkey (
          id,
          full_name,
-         avatar_url
-       ),
-       agent_profiles!inner (
-         experience_years,
-         rating,
-         rating_count,
-         bio
+         avatar_url,
+         agent_profiles (
+           experience_years,
+           rating,
+           rating_count,
+           bio
+         )
        )`,
       { count: "exact" }
     )
@@ -62,5 +69,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data: data ?? [], count: count ?? 0, page, pageSize });
+  // Reshape the nested embed back into the flat contract the frontend expects:
+  // { ...post, profiles: { id, full_name, avatar_url }, agent_profiles: {...} }
+  type NestedProfile = {
+    id: string;
+    full_name: string | null;
+    avatar_url: string | null;
+    agent_profiles?: {
+      experience_years: number | null;
+      rating: number;
+      rating_count: number;
+      bio: string | null;
+    } | null;
+  };
+
+  const shaped = (data ?? []).map((row) => {
+    const r = row as { profiles?: NestedProfile | NestedProfile[] | null } & Record<string, unknown>;
+    const p = Array.isArray(r.profiles) ? r.profiles[0] ?? null : r.profiles ?? null;
+    const { profiles: _nested, ...post } = r;
+    return {
+      ...post,
+      profiles: p ? { id: p.id, full_name: p.full_name, avatar_url: p.avatar_url } : null,
+      agent_profiles: p?.agent_profiles ?? null,
+    };
+  });
+
+  return NextResponse.json({ data: shaped, count: count ?? 0, page, pageSize });
 }
