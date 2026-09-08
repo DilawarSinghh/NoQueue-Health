@@ -7,7 +7,7 @@ import type { Department } from "@/lib/constants/hospital";
 // screen — never in URL params, never in localStorage in v1.
 
 export type IntakeModel    = "minimax-m3" | "gemini" | "groq";
-export type IntakeLanguage  = "en" | "hi";
+export type IntakeLanguage  = "en" | "hi" | "auto";
 
 export interface ChatMessage {
   role:    "user" | "assistant" | "system";

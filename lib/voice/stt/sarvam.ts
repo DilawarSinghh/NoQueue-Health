@@ -10,9 +10,12 @@
  *   multipart/form-data: file (≤30s audio), model (saaras:v3), mode (transcribe)
  *   Response JSON: { request_id, transcript, language_code }
  *
- * Language: Saaras v3 auto-detects the spoken language (incl. Hinglish
- * code-mixing), so we run mode="transcribe" which preserves the patient's
- * spoken language — no forced translation to English.
+ * IMPORTANT: The /speech-to-text transcribe endpoint does NOT accept a
+ * `language_code` form field — Saaras v3 auto-detects the spoken language
+ * itself (English, Hindi, and Hinglish code-mixing). Sending an extra
+ * `language_code` field causes HTTP 400 from Sarvam, so we deliberately do
+ * NOT send it. The client's language "selection" is therefore informational;
+ * actual language detection is automatic.
  */
 
 import type {
@@ -37,75 +40,60 @@ export class VoiceProviderError extends Error {
   }
 }
 
-async function callSarvam(
-  input: AudioInput,
-  options: STTOptions,
-  includeLanguageCode: boolean
-): Promise<Response> {
-  const apiKey = process.env.SARVAM_API_KEY;
-  if (!apiKey) {
-    throw new VoiceProviderError("VOICE_NOT_CONFIGURED", "SARVAM_API_KEY is not set");
-  }
-
-  const form = new FormData();
-  const bytes = input.data instanceof Uint8Array
-    ? input.data
-    : new Uint8Array(input.data);
-
-  form.append(
-    "file",
-    new Blob([bytes as unknown as BlobPart], { type: input.mimeType || "audio/webm" }),
-    input.filename ?? "recording.webm"
-  );
-  form.append("model", process.env.SARVAM_STT_MODEL || DEFAULT_STT_MODEL);
-  // "transcribe" preserves the patient's spoken language (Hindi/Hinglish/English).
-  form.append("mode", "transcribe");
-  if (includeLanguageCode && options.language !== "auto") {
-    form.append("language_code", options.language);
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-  try {
-    return await fetch(`${DEFAULT_BASE_URL}/speech-to-text`, {
-      method: "POST",
-      headers: { "api-subscription-key": apiKey },
-      body: form,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 export const sarvamSTT: SpeechToTextProvider = {
   id: "sarvam",
 
   async transcribe(input: AudioInput, options: STTOptions): Promise<STTResult> {
+    const apiKey = process.env.SARVAM_API_KEY;
+    if (!apiKey) {
+      throw new VoiceProviderError("VOICE_NOT_CONFIGURED", "SARVAM_API_KEY is not set");
+    }
+
+    const form = new FormData();
+    const bytes = input.data instanceof Uint8Array
+      ? input.data
+      : new Uint8Array(input.data);
+
+    if (bytes.byteLength === 0) {
+      throw new VoiceProviderError("VOICE_INVALID_REQUEST", "Empty audio payload");
+    }
+
+    form.append(
+      "file",
+      new Blob([bytes as unknown as BlobPart], { type: input.mimeType || "audio/webm" }),
+      input.filename ?? "recording.webm"
+    );
+    form.append("model", process.env.SARVAM_STT_MODEL || DEFAULT_STT_MODEL);
+    // "transcribe" preserves the patient's spoken language (Hindi/Hinglish/English).
+    // NOTE: no language_code field — Sarvam rejects it on this endpoint (HTTP 400).
+    form.append("mode", "transcribe");
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
     let res: Response;
     try {
-      // Explicit language selection: send language_code; if this Sarvam model
-      // doesn't accept the field (400/422), retry once without it — auto-
-      // detection covers the case anyway.
-      res = await callSarvam(input, options, options.language !== "auto");
-      if (res.status === 400 || res.status === 422) {
-        res = await callSarvam(input, options, false);
-      }
+      res = await fetch(`${DEFAULT_BASE_URL}/speech-to-text`, {
+        method: "POST",
+        headers: { "api-subscription-key": apiKey },
+        body: form,
+        signal: controller.signal,
+      });
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") {
         throw new VoiceProviderError("VOICE_TIMEOUT", "Speech-to-text request timed out");
       }
       throw new VoiceProviderError(
-        "VOICE_UNAVAILABLE",
+        "VOICE_NETWORK_ERROR",
         `Speech-to-text network error: ${err instanceof Error ? err.message : "unknown"}`
       );
+    } finally {
+      clearTimeout(timer);
     }
 
     if (!res.ok) {
-      // Log only status server-side — never the audio or provider body with
-      // credentials. The body may echo request metadata; keep it out of logs.
-      console.error(`[voice/stt/sarvam] HTTP ${res.status}`);
+      // Log only safe metadata — never audio or provider body with credentials.
+      console.error(`[voice/stt/sarvam] HTTP ${res.status} after ${(await res.text()).slice(0, 200) || "no body"}`);
       throw new VoiceProviderError(
         mapVoiceHttpError(res.status),
         `Speech-to-text failed with HTTP ${res.status}`

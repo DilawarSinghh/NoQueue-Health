@@ -40,15 +40,17 @@ export interface AIRequest {
     chronicConditions: string | null;
   };
   currentStructuredData: Record<string, string>;
-  language: "en" | "hi";
+  language: "en" | "hi" | "auto";
 }
 
 /** Provider identifier — safe to send to the client. */
 export type AIProviderId = "minimax-m3" | "gemini" | "groq";
 
-/** Provider metadata for the UI. */
+/** Provider metadata for the UI. Labels are patient-facing — real provider
+ *  names (MiniMax/Gemini/Groq) are hidden; patients only see "AI Agent N". */
 export interface AIProviderInfo {
   id: AIProviderId;
+  /** Patient-facing display name — never the real provider name. */
   name: string;
   description: string;
   supportsVoice: boolean;
@@ -56,29 +58,45 @@ export interface AIProviderInfo {
   icon: "Zap" | "Sparkles" | "Brain";
 }
 
+/**
+ * Map an internal provider id to a patient-facing "AI Agent N" label.
+ * Kept central so no patient UI ever leaks the real provider/model name.
+ */
+const PROVIDER_DISPLAY: Record<AIProviderId, string> = {
+  "minimax-m3": "AI Agent 1",
+  gemini: "AI Agent 2",
+  groq: "AI Agent 3",
+};
+
+/** Patient-safe display name for a provider id. */
+export function providerDisplayName(id: AIProviderId | string | null | undefined): string {
+  if (id && id in PROVIDER_DISPLAY) return PROVIDER_DISPLAY[id as AIProviderId];
+  return "AI Assistant";
+}
+
 /** All available providers in fallback order. */
 export const AI_PROVIDERS: AIProviderInfo[] = [
   {
     id: "minimax-m3",
-    name: "MiniMax M3",
-    description: "Fast · Free tier available",
+    name: "AI Agent 1",
+    description: "Fast and helpful",
     supportsVoice: true,
     supportsHindi: true,
     icon: "Zap",
   },
   {
     id: "gemini",
-    name: "Google Gemini",
-    description: "Balanced · Multilingual",
+    name: "AI Agent 2",
+    description: "Balanced and multilingual",
     supportsVoice: true,
     supportsHindi: true,
     icon: "Sparkles",
   },
   {
     id: "groq",
-    name: "Groq",
-    description: "Reliable fallback · English",
-    supportsVoice: true,
+    name: "AI Agent 3",
+    description: "Reliable",
+    supportsVoice: false,
     supportsHindi: false,
     icon: "Brain",
   },

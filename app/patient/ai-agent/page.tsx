@@ -46,7 +46,20 @@ type SttLangChoice = "auto" | "en" | "hi";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function voiceLang(language: IntakeLanguage): VoiceLang {
-  return language === "hi" ? "hi-IN" : "en-IN";
+  return language === "hi" ? "hi-IN" : language === "auto" ? "en-IN" : "en-IN";
+}
+
+/**
+ * Resolve the concrete TTS language for the Sarvam Bulbul call.
+ * For 'en'/'hi' use the explicit choice. For 'auto', infer from the reply
+ * text — Devanagari characters mean Hindi, otherwise English. This keeps the
+ * TTS in the SAME language as the AI response even under auto-detect.
+ */
+function resolveTtsLanguage(language: IntakeLanguage, text: string): "en-IN" | "hi-IN" {
+  if (language === "hi") return "hi-IN";
+  if (language === "en") return "en-IN";
+  // auto: detect Devanagari (U+0900–U+097F)
+  return /[\u0900-\u097F]/.test(text) ? "hi-IN" : "en-IN";
 }
 
 function apiEndpoint(): string {
@@ -202,7 +215,7 @@ function LanguageToggle({
     <div className="flex items-center gap-2">
       <span className="text-sm text-muted-foreground">Language:</span>
       <div className="flex gap-1 rounded-xl border border-white/40 bg-white/40 p-1">
-        {(["en", "hi"] as IntakeLanguage[]).map((l) => (
+        {(["auto", "en", "hi"] as IntakeLanguage[]).map((l) => (
           <button
             key={l}
             onClick={() => onChange(l)}
@@ -212,7 +225,7 @@ function LanguageToggle({
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            {l === "en" ? "English" : "हिंदी"}
+            {l === "auto" ? "Auto" : l === "en" ? "English" : "हिंदी"}
           </button>
         ))}
       </div>
@@ -331,7 +344,7 @@ function VoicePanel({
                 key={e}
                 onClick={() => onEngineChange(e)}
                 disabled={e === "sarvam" && !isVoiceRecorderSupported()}
-                title={e === "browser" ? "Browser speech recognition (fallback)" : "AI voice — Sarvam (supports Hindi & Hinglish)"}
+                title={e === "browser" ? "Browser speech recognition (fallback)" : "AI voice (supports Hindi & Hinglish)"}
                 className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {e === "sarvam" ? "AI Voice" : "Browser"}
@@ -565,8 +578,9 @@ export default function AIAgentPage() {
   // Unified TTS entry point: Sarvam primary, browser synthesis fallback.
   const speakReply = useCallback((text: string) => {
     if (!text.trim()) return;
+    const ttsLang = resolveTtsLanguage(language, text);
     if (voiceEngine === "sarvam") {
-      void sarvamTts.speak(text, language === "hi" ? "hi-IN" : "en-IN").then((ok) => {
+      void sarvamTts.speak(text, ttsLang).then((ok) => {
         if (!ok) voiceSpeech.speak(text); // Sarvam failed — browser fallback
       });
     } else {

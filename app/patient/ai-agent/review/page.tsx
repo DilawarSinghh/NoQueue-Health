@@ -58,6 +58,8 @@ export default function ReviewPage() {
   const [submitted, setSubmitted]       = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [fieldErrors, setFieldErrors]   = useState<Partial<Record<string, string>>>({});
+  const [emailStatus, setEmailStatus]   = useState<"sent" | "failed" | "skipped" | null>(null);
+  const [emailDetail, setEmailDetail]   = useState<string | null>(null);
 
   // The patient-confirmed department — initialised to the AI recommendation,
   // but the patient can override it via the Select on this screen.
@@ -150,6 +152,8 @@ export default function ReviewPage() {
 
       setPdfUrl(json.pdfUrl);
       if (json.clinicalSummary) setClinicalSummary(json.clinicalSummary);
+      setEmailStatus(json.emailStatus ?? "skipped");
+      setEmailDetail(json.emailErrorCode ?? null);
       setSubmitted(true);
     } catch {
       setError("Network error — please check your connection and try again.");
@@ -159,7 +163,7 @@ export default function ReviewPage() {
   };
 
   // ── Success screen ─────────────────────────────────────────────────────────
-  if (submitted && pdfUrl) {
+  if (submitted) {
     return (
       <div className="mx-auto max-w-xl">
         <motion.div
@@ -172,8 +176,23 @@ export default function ReviewPage() {
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Report generated</h1>
               <p className="mt-2 text-muted-foreground">
-                Your intake summary has been prepared and sent to the clinic.
+                Your intake summary has been prepared
+                {emailStatus === "sent"
+                  ? " and sent to the clinic."
+                  : " for the clinic on record."}
               </p>
+              {emailStatus === "failed" && (
+                <p className="mx-auto mt-2 max-w-md rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
+                  Your report was generated, but it could not be emailed right now. Please try
+                  again, or download the PDF below (if available). Reference: {emailDetail ?? "EMAIL_PROVIDER_ERROR"}
+                </p>
+              )}
+              {emailStatus === "skipped" && (
+                <p className="mx-auto mt-2 max-w-md rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800" role="alert">
+                  Your report was generated. Email delivery is not configured on this server yet —
+                  a clinic staff member can still access it from your saved record.
+                </p>
+              )}
             </div>
 
             {clinicalSummary && (
@@ -212,16 +231,24 @@ export default function ReviewPage() {
             )}
 
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:justify-center">
-              <a
-                href={pdfUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                download
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-                Download PDF
-              </a>
+              {pdfUrl ? (
+                <a
+                  href={pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+                >
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  Download PDF
+                </a>
+              ) : (
+                emailStatus === "failed" && (
+                  <Button variant="outline" onClick={() => window.location.reload()} className="gap-2">
+                    <RefreshCw className="h-4 w-4" aria-hidden="true" /> Try again
+                  </Button>
+                )
+              )}
               <Button
                 variant="outline"
                 onClick={() => { reset(); router.push("/patient/ai-agent"); }}
@@ -232,9 +259,11 @@ export default function ReviewPage() {
               </Button>
             </div>
 
-            <p className="text-xs text-muted-foreground">
-              The PDF download link is valid for 1 hour. Your report has been saved to your account.
-            </p>
+            {pdfUrl && (
+              <p className="text-xs text-muted-foreground">
+                The PDF download link is valid for 1 hour. Your report has been saved to your account.
+              </p>
+            )}
           </GlassCard>
         </motion.div>
       </div>

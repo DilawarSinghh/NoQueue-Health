@@ -75,6 +75,32 @@ ${Object.entries(data)
   throw new Error("Failed to generate clinical summary");
 }
 
+// ─── Plain-text fallback summary (used if the AI summary model is unavailable) ─
+function buildPlainSummary(
+  data: z.output<typeof intakeDataSchema>,
+  patientName: string
+): string {
+  const lines = Object.entries(data)
+    .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
+    .map(([k, v]) => `${k}: ${v}`);
+  return [
+    `Patient: ${patientName}`,
+    ...lines,
+    "",
+    "Generated from patient self-report via AI intake. Not a diagnosis. For review by a licensed clinician.",
+  ].join("\n");
+}
+
+// ─── Classify Resend errors into safe internal codes ──────────────────────────
+function classifyEmailError(e: { statusCode?: number; message?: string }): string {
+  const sc = e?.statusCode;
+  if (sc === 401 || sc === 403) return "EMAIL_AUTH_ERROR";
+  if (sc === 422) return "EMAIL_INVALID_RECIPIENT";
+  if (sc === 429) return "EMAIL_RATE_LIMITED";
+  if (sc != null && sc >= 500) return "EMAIL_PROVIDER_ERROR";
+  return "EMAIL_PROVIDER_ERROR";
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 export async function POST(request: Request) {
   // Auth check — must be logged-in patient
@@ -106,10 +132,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // 1. Clinical summary — best-effort. A summary-model failure must never block
+  //    PDF generation or email delivery.
+  let clinicalSummary = "";
   try {
-    // 1. Generate clinical summary
-    const clinicalSummary = await generateClinicalSummary(intakeData, patientName);
+    clinicalSummary = await generateClinicalSummary(intakeData, patientName);
+  } catch (summaryErr) {
+    console.error("[generate-report] Clinical summary generation failed:", summaryErr instanceof Error ? summaryErr.message : summaryErr);
+    clinicalSummary = buildPlainSummary(intakeData, patientName);
+  }
 
+  try {
     // 2. Render PDF
     const generatedAt = formatGeneratedAt(new Date());
     // renderToBuffer expects @react-pdf's own ReactElement type — cast through
@@ -126,49 +159,62 @@ export async function POST(request: Request) {
       }) as unknown as Parameters<typeof renderToBuffer>[0]
     );
 
-    // 3. Upload PDF to Supabase Storage (service role — bypasses RLS)
-    const admin    = getSupabaseAdmin();
-    const fileName = `${patientId}/${Date.now()}-intake.pdf`;
-    const bucket   = "patient-pdfs";
+    // 3. Upload PDF to Supabase Storage + insert intake_record (best-effort).
+    //    A storage/DB failure must NOT block email delivery — we already hold
+    //    the PDF bytes in memory for the attachment.
+    const admin      = getSupabaseAdmin();
+    const bucket     = "patient-pdfs";
+    let pdfUrl: string | null = null;
+    let storageError: string | null = null;
 
-    // Ensure bucket exists (idempotent)
-    const { data: buckets } = await admin.storage.listBuckets();
-    if (!buckets?.some((b) => b.name === bucket)) {
-      await admin.storage.createBucket(bucket, { public: false, fileSizeLimit: "10MB" });
+    try {
+      const fileName = `${patientId}/${Date.now()}-intake.pdf`;
+
+      // Ensure bucket exists (idempotent)
+      const { data: buckets } = await admin.storage.listBuckets();
+      if (!buckets?.some((b) => b.name === bucket)) {
+        await admin.storage.createBucket(bucket, { public: false, fileSizeLimit: "10MB" });
+      }
+
+      const { error: uploadErr } = await admin.storage
+        .from(bucket)
+        .upload(fileName, pdfBuffer, { contentType: "application/pdf", upsert: false });
+      if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
+
+      // Signed URL (1 hour — patient downloads immediately; history re-fetches later)
+      const { data: signed, error: signErr } = await admin.storage
+        .from(bucket)
+        .createSignedUrl(fileName, 3600);
+      if (signErr) throw new Error(`Signed URL failed: ${signErr.message}`);
+      pdfUrl = signed.signedUrl;
+
+      // Insert intake_record (stores the storage path, not the expiring URL)
+      const { error: dbErr } = await admin.from("intake_records").insert({
+        patient_id:             patientId,
+        structured_data:        intakeData,
+        clinical_summary:       clinicalSummary,
+        pdf_url:                fileName,
+        tier:                   model,     // minimax-m3 | gemini | groq (internal)
+        fallback_occurred:      fallbackOccurred,
+        recommended_department: recommendedDepartment ?? intakeData.doctorOrDepartment ?? null,
+      });
+      if (dbErr) throw new Error(`DB insert failed: ${dbErr.message}`);
+    } catch (storageErr) {
+      storageError = storageErr instanceof Error ? storageErr.message : "Storage failed";
+      console.error("[generate-report] Storage/DB step failed (non-fatal):", storageError);
     }
 
-    const { error: uploadErr } = await admin.storage
-      .from(bucket)
-      .upload(fileName, pdfBuffer, { contentType: "application/pdf", upsert: false });
+    // 4. Email the report via Resend. Always attempted when configured. The
+    //    result is classified and returned so the UI tells the patient exactly
+    //    what happened (sent vs. failed vs. skipped) — never assumes success.
+    let emailStatus: "sent" | "failed" | "skipped" = "skipped";
+    let emailErrorCode: string | null = null;
 
-    if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
-
-    // 4. Signed URL (1 hour — patient downloads immediately; re-fetch from intake_records later)
-    const { data: signed, error: signErr } = await admin.storage
-      .from(bucket)
-      .createSignedUrl(fileName, 3600);
-
-    if (signErr) throw new Error(`Signed URL failed: ${signErr.message}`);
-    const pdfUrl = signed.signedUrl;
-
-    // 5. Insert intake_record
-    const { error: dbErr } = await admin.from("intake_records").insert({
-      patient_id:              patientId,
-      structured_data:         intakeData,
-      clinical_summary:        clinicalSummary,
-      pdf_url:                 fileName,   // store path, not signed URL (URL expires)
-      tier:                    model,      // stores the model used (minimax-m3, gemini, groq)
-      fallback_occurred:       fallbackOccurred,
-      recommended_department:  recommendedDepartment ?? intakeData.doctorOrDepartment ?? null,
-    });
-    if (dbErr) throw new Error(`DB insert failed: ${dbErr.message}`);
-
-    // 6. Email PDF via Resend (best-effort — don't fail the response if email errors)
     const doctorEmail = process.env.DOCTOR_REPORT_EMAIL;
-    if (doctorEmail && process.env.RESEND_API_KEY) {
+    if (doctorEmail && process.env.RESEND_API_KEY && pdfBuffer.byteLength > 0) {
       try {
         const resend = new Resend(process.env.RESEND_API_KEY);
-        await resend.emails.send({
+        const { data: emailData, error: emailErr } = await resend.emails.send({
           from:        process.env.RESEND_FROM_EMAIL ?? "NoQueue Health <onboarding@resend.dev>",
           to:          [doctorEmail],
           subject:     `Patient Intake Report — ${patientName} — ${generatedAt}`,
@@ -182,13 +228,35 @@ export async function POST(request: Request) {
             },
           ],
         });
-      } catch (emailErr) {
-        // Non-fatal — log but don't surface to patient
-        console.error("Email send failed (non-fatal):", emailErr);
+
+        if (emailErr) {
+          emailStatus = "failed";
+          emailErrorCode = classifyEmailError(emailErr);
+          console.error(`[generate-report] Email failed (${emailErrorCode}):`, emailErr.message ?? emailErr);
+        } else if (emailData?.id) {
+          emailStatus = "sent";
+        } else {
+          emailStatus = "failed";
+          emailErrorCode = "EMAIL_PROVIDER_ERROR";
+        }
+      } catch (emailThrow) {
+        emailStatus = "failed";
+        emailErrorCode = "EMAIL_PROVIDER_ERROR";
+        console.error("[generate-report] Email threw:", emailThrow instanceof Error ? emailThrow.message : emailThrow);
       }
+    } else {
+      emailStatus = "skipped";
+      emailErrorCode = "EMAIL_CONFIGURATION_ERROR";
     }
 
-    return NextResponse.json({ success: true, pdfUrl, clinicalSummary });
+    return NextResponse.json({
+      success:       true,
+      pdfUrl,
+      clinicalSummary,
+      emailStatus,
+      emailErrorCode,
+      storageError,
+    });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Report generation failed";
     return NextResponse.json({ error: msg }, { status: 500 });

@@ -17,6 +17,7 @@ import {
   type IntakeRequest,
 } from "@/lib/intakePrompt";
 import { routeAIRequest } from "@/lib/ai/router";
+import { providerDisplayName } from "@/lib/ai/types";
 
 export async function POST(request: Request): Promise<NextResponse> {
   let body: unknown;
@@ -73,36 +74,29 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  // Build response with metadata
+  // Build response with metadata — provider ids are mapped to patient-safe
+  // "AI Agent N" labels so no real provider/model name reaches the browser.
   const response: Record<string, unknown> = {
     ...result.response,
     _meta: {
-      provider: result.provider,
-      model: result.model,
+      provider: result.provider ? providerDisplayName(result.provider) : null,
+      model: null, // never expose the concrete model name to the patient
       fallbackOccurred: result.fallbackOccurred,
       attempts: result.attempts.map((a) => ({
-        provider: a.provider,
+        provider: providerDisplayName(a.provider),
         success: a.success,
-        error: a.error,
         durationMs: a.durationMs,
       })),
     },
   };
 
-  // If fallback occurred, add a patient-friendly notice
+  // If fallback occurred, add a patient-friendly notice (no provider/error detail)
   if (result.fallbackOccurred && result.attempts.length > 0) {
-    const firstAttempt = result.attempts[0];
-    const shortReason = firstAttempt.error
-      ? firstAttempt.error.length > 100
-        ? firstAttempt.error.slice(0, 100) + "…"
-        : firstAttempt.error
-      : "temporarily unavailable";
-
-    response.fallbackNotice = `The selected AI model (${firstAttempt.provider}) is ${shortReason}. We've switched you to another model so you can continue.`;
+    response.fallbackNotice = `Our advanced assistant hit a temporary issue, so we've switched you to another assistant to keep things moving.`;
 
     if (language === "hi") {
       response.fallbackNotice +=
-        " Further responses will be in English if the fallback model doesn't support Hindi.";
+        " Further responses will be in English if the fallback assistant does not support Hindi.";
     }
 
     response.fallbackOccurred = true;

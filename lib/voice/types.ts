@@ -61,17 +61,21 @@ export interface TextToSpeechProvider {
 export type VoiceErrorCode =
   | "VOICE_NOT_CONFIGURED"
   | "VOICE_INVALID_REQUEST"
+  | "VOICE_INVALID_AUDIO"
+  | "VOICE_AUTH_FAILED"
   | "VOICE_PAYLOAD_TOO_LARGE"
   | "VOICE_RATE_LIMITED"
   | "VOICE_TIMEOUT"
+  | "VOICE_NETWORK_ERROR"
   | "VOICE_TRANSCRIPTION_FAILED"
   | "VOICE_SYNTHESIS_FAILED"
   | "VOICE_UNAVAILABLE";
 
 /** Map provider HTTP status → safe, client-presentable error code. */
 export function mapVoiceHttpError(status: number | undefined): VoiceErrorCode {
-  if (status === 401 || status === 403) return "VOICE_NOT_CONFIGURED";
-  if (status === 400 || status === 422) return "VOICE_INVALID_REQUEST";
+  if (status === 401 || status === 403) return "VOICE_AUTH_FAILED";
+  if (status === 400) return "VOICE_INVALID_REQUEST";
+  if (status === 422) return "VOICE_INVALID_AUDIO";
   if (status === 413) return "VOICE_PAYLOAD_TOO_LARGE";
   if (status === 429) return "VOICE_RATE_LIMITED";
   if (status === 408) return "VOICE_TIMEOUT";
