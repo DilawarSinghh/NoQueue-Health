@@ -10,10 +10,12 @@ import {
   ChevronRight,
   Clock,
   History,
+  Loader2,
   Mic,
   MicOff,
   Send,
   Sparkles,
+  Square,
   Volume2,
   VolumeX,
   Zap,
@@ -32,8 +34,14 @@ import {
 } from "@/lib/schema";
 import { useVoiceInput, type VoiceLang } from "@/lib/hooks/useVoiceInput";
 import { useVoiceSpeech } from "@/lib/hooks/useVoiceSpeech";
+import { useVoiceRecorder, isVoiceRecorderSupported } from "@/lib/hooks/useVoiceRecorder";
+import { useSarvamTts, type TtsState } from "@/lib/hooks/useSarvamTts";
+import type { STTLanguage } from "@/lib/voice/types";
 
 type InputMode = "text" | "voice";
+type VoiceEngine = "sarvam" | "browser";
+/** STT language selection — "auto" lets Sarvam detect (incl. Hinglish). */
+type SttLangChoice = "auto" | "en" | "hi";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -255,33 +263,112 @@ function ModeToggle({
 
 // ─── Voice panel ──────────────────────────────────────────────────────────────
 function VoicePanel({
-  listening, speaking, transcript, interim, inputError,
-  onStartListening, onStopListening, onStopSpeaking, onSubmit,
-  onTranscriptChange, disabled, language,
+  engine, onEngineChange,
+  sttLanguage, onSttLanguageChange,
+  browserListening, onStartBrowserListening, onStopBrowserListening,
+  recording, processing, onStartRecording, onStopRecording,
+  browserSpeaking, ttsState, onStopSpeaking, onPlayReply, onStopReply,
+  transcript, interim, inputError,
+  onSubmit, onTranscriptChange, disabled, language, lastReply, ttsBusy,
 }: {
-  listening:          boolean;
-  speaking:           boolean;
-  transcript:         string;
-  interim:            string;
-  inputError:         string | null;
-  onStartListening:   () => void;
-  onStopListening:    () => void;
-  onStopSpeaking:     () => void;
-  onSubmit:           (text: string) => void;
-  onTranscriptChange: (t: string) => void;
-  disabled:           boolean;
-  language:           IntakeLanguage;
+  engine:                VoiceEngine;
+  onEngineChange:        (e: VoiceEngine) => void;
+  sttLanguage:           SttLangChoice;
+  onSttLanguageChange:   (l: SttLangChoice) => void;
+  browserListening:      boolean;
+  onStartBrowserListening: () => void;
+  onStopBrowserListening:  () => void;
+  recording:             boolean;
+  processing:            boolean;
+  onStartRecording:      () => void;
+  onStopRecording:       () => void;
+  browserSpeaking:       boolean;
+  ttsState:              TtsState;
+  onStopSpeaking:        () => void;
+  onPlayReply:           () => void;
+  onStopReply:           () => void;
+  transcript:            string;
+  interim:               string;
+  inputError:            string | null;
+  onSubmit:              (text: string) => void;
+  onTranscriptChange:    (t: string) => void;
+  disabled:              boolean;
+  language:              IntakeLanguage;
+  lastReply:             string | null;
+  ttsBusy:               boolean;
 }) {
-  const placeholder = language === "hi"
-    ? (listening ? "सुन रहा हूँ… अभी बोलें" : "बोलने के लिए माइक दबाएं")
-    : (listening ? "Listening… speak now" : "Press the mic to start speaking");
+  const hi          = language === "hi";
+  const recordingNow = engine === "sarvam" ? recording : browserListening;
+  const placeholder = hi
+    ? (recordingNow ? "सुन रहा हूँ… अभी बोलें" : "बोलने के लिए माइक दबाएं")
+    : (recordingNow ? "Listening… speak now" : "Press the mic to start speaking");
+
+  const startVoice = () => {
+    if (engine === "sarvam") {
+      onStopReply();          // never record over TTS playback
+      void onStartRecording();
+    } else {
+      onStopSpeaking();
+      onStartBrowserListening();
+    }
+  };
+  const stopVoice = () => {
+    if (engine === "sarvam") onStopRecording();
+    else onStopBrowserListening();
+  };
+
+  const micDisabled = disabled || ttsBusy; // no mic while AI voice is active
 
   return (
     <div className="border-t border-white/40 p-4 space-y-3">
+      {/* Engine + STT language row */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Voice:</span>
+          <div className="flex gap-1 rounded-lg border border-white/40 bg-white/40 p-0.5">
+            {(["sarvam", "browser"] as VoiceEngine[]).map((e) => (
+              <button
+                key={e}
+                onClick={() => onEngineChange(e)}
+                disabled={e === "sarvam" && !isVoiceRecorderSupported()}
+                title={e === "browser" ? "Browser speech recognition (fallback)" : "AI voice — Sarvam (supports Hindi & Hinglish)"}
+                className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {e === "sarvam" ? "AI Voice" : "Browser"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* STT language — Sarvam only (browser engine uses conversation language) */}
+        {engine === "sarvam" && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Spoken language:</span>
+            <div className="flex gap-1 rounded-lg border border-white/40 bg-white/40 p-0.5">
+              {(["auto", "en", "hi"] as SttLangChoice[]).map((l) => (
+                <button
+                  key={l}
+                  onClick={() => onSttLanguageChange(l)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                    sttLanguage === l
+                      ? "bg-white shadow-sm text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {l === "auto" ? "Auto Detect" : l === "en" ? "English" : "हिन्दी"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Transcript */}
       <div className="grid gap-1.5">
         <Label htmlFor="voice-transcript" className="text-xs text-muted-foreground">
-          {language === "hi" ? "आपका जवाब" : "Your answer"}{" "}
-          {listening && <span className="text-red-500 animate-pulse">● {language === "hi" ? "रिकॉर्डिंग…" : "Recording…"}</span>}
+          {hi ? "आपका जवाब" : "Your answer"}{" "}
+          {recordingNow && <span className="text-red-500 animate-pulse">● {hi ? "रिकॉर्डिंग…" : "Recording…"}</span>}
+          {processing && <span className="text-primary animate-pulse"> {hi ? "ट्रांसक्राइब हो रहा है…" : "Transcribing…"}</span>}
         </Label>
         <div className="relative">
           <textarea
@@ -291,7 +378,7 @@ function VoicePanel({
             rows={2}
             placeholder={placeholder}
             className="w-full resize-none rounded-xl border border-input bg-white/60 px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 placeholder:text-muted-foreground"
-            aria-label={language === "hi" ? "वॉयस ट्रांसक्रिप्ट" : "Voice transcript — editable"}
+            aria-label={hi ? "वॉयस ट्रांसक्रिप्ट" : "Voice transcript — editable"}
           />
           {interim && (
             <span className="absolute bottom-2 right-3 text-xs text-muted-foreground/60 italic">
@@ -302,45 +389,97 @@ function VoicePanel({
         {inputError && <p className="text-xs text-destructive" role="alert">{inputError}</p>}
       </div>
 
-      <div className="flex items-center gap-2">
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Mic — push-to-talk */}
         <button
-          onClick={listening ? onStopListening : onStartListening}
-          disabled={disabled}
-          aria-label={listening
-            ? (language === "hi" ? "रिकॉर्डिंग बंद करें" : "Stop recording")
-            : (language === "hi" ? "रिकॉर्डिंग शुरू करें" : "Start recording")}
+          onClick={recordingNow ? stopVoice : startVoice}
+          disabled={micDisabled}
+          aria-label={recordingNow
+            ? (hi ? "रिकॉर्डिंग बंद करें" : "Stop recording")
+            : (hi ? "रिकॉर्डिंग शुरू करें" : "Start recording")}
           className={`flex h-12 w-12 items-center justify-center rounded-full transition-all disabled:opacity-50 ${
-            listening
+            recordingNow
               ? "bg-red-500 text-white shadow-lg shadow-red-200 animate-pulse"
               : "bg-primary/10 text-primary hover:bg-primary/20"
           }`}
         >
-          {listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+          {recordingNow ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
         </button>
 
-        {speaking && (
-          <button
-            onClick={onStopSpeaking}
-            aria-label={language === "hi" ? "AI को रोकें" : "Stop AI speaking"}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200"
-          >
-            <VolumeX className="h-4 w-4" />
-          </button>
-        )}
-        {speaking && !listening && (
+        {processing && (
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Volume2 className="h-3.5 w-3.5 text-primary animate-pulse" />
-            {language === "hi" ? "AI बोल रहा है…" : "AI is speaking…"}
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            {hi ? "ट्रांसक्राइब हो रहा है…" : "Transcribing…"}
           </span>
+        )}
+
+        {/* TTS — Sarvam engine: generate/play current reply */}
+        {engine === "sarvam" && (
+          <>
+            {ttsState === "generating" && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                {hi ? "आवाज़ तैयार हो रही है…" : "Generating voice…"}
+              </span>
+            )}
+            {ttsState === "playing" && (
+              <>
+                <button
+                  onClick={onStopReply}
+                  aria-label={hi ? "AI को रोकें" : "Stop AI voice"}
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200"
+                >
+                  <Square className="h-4 w-4" />
+                </button>
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Volume2 className="h-3.5 w-3.5 text-primary animate-pulse" />
+                  {hi ? "AI बोल रहा है…" : "Playing…"}
+                </span>
+              </>
+            )}
+            {(ttsState === "idle" || ttsState === "finished" || ttsState === "error") && lastReply && (
+              <button
+                onClick={onPlayReply}
+                disabled={disabled}
+                aria-label={hi ? "जवाब चलाएं" : "Play response"}
+                className="flex h-11 items-center gap-1.5 rounded-full bg-primary/10 px-4 text-xs font-medium text-primary hover:bg-primary/20 disabled:opacity-50"
+              >
+                <Volume2 className="h-4 w-4" />
+                {hi ? "जवाब चलाएं" : "Play response"}
+              </button>
+            )}
+          </>
+        )}
+
+        {/* TTS — browser fallback engine */}
+        {engine === "browser" && (
+          <>
+            {browserSpeaking && (
+              <button
+                onClick={onStopSpeaking}
+                aria-label={hi ? "AI को रोकें" : "Stop AI speaking"}
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200"
+              >
+                <VolumeX className="h-4 w-4" />
+              </button>
+            )}
+            {browserSpeaking && !recordingNow && (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Volume2 className="h-3.5 w-3.5 text-primary animate-pulse" />
+                {hi ? "AI बोल रहा है…" : "AI is speaking…"}
+              </span>
+            )}
+          </>
         )}
 
         <Button
           className="ml-auto gap-2"
-          onClick={() => { onStopListening(); onSubmit(transcript.trim()); }}
+          onClick={() => { stopVoice(); onSubmit(transcript.trim()); }}
           disabled={!transcript.trim() || disabled}
         >
           <Send className="h-4 w-4" />
-          {language === "hi" ? "भेजें" : "Submit"}
+          {hi ? "भेजें" : "Submit"}
         </Button>
       </div>
     </div>
@@ -384,10 +523,75 @@ export default function AIAgentPage() {
   const voiceInput  = useVoiceInput(currentVoiceLang);
   const voiceSpeech = useVoiceSpeech(currentVoiceLang);
 
-  // Voice available when the selected model supports it (provider capability)
+  // ── Sarvam voice layer (server-side STT/TTS; browser Web Speech is fallback)
+  const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>("sarvam");
+  const [sttLangChoice, setSttLangChoice] = useState<SttLangChoice>("auto");
+
+  // TTS: Sarvam Bulbul via /api/text-to-speech, browser synthesis as fallback
+  const sarvamTts = useSarvamTts();
+
+  const [sttError, setSttError] = useState<string | null>(null);
+
+  const handleRecordedAudio = useCallback(async (blob: Blob) => {
+    try {
+      const form = new FormData();
+      form.append("audio", blob, "recording.webm");
+      form.append("language", sttLangChoice === "auto" ? "auto" : sttLangChoice === "hi" ? "hi-IN" : "en-IN");
+      const res  = await fetch("/api/speech-to-text", { method: "POST", body: form });
+      const json = (await res.json()) as { success?: boolean; transcript?: string; error?: string };
+      if (!res.ok || !json.success || !json.transcript) {
+        setSttError("Voice input is temporarily unavailable. You can type your answer instead.");
+        return;
+      }
+      // Transcript lands in the same editable answer field the browser
+      // engine uses — the downstream submit flow is identical.
+      setSttError(null);
+      voiceInput.setTranscript(json.transcript);
+    } catch {
+      setSttError("Voice input failed — please check your connection, or type your answer.");
+    }
+  }, [sttLangChoice, voiceInput]);
+  const voiceRecorder = useVoiceRecorder(handleRecordedAudio);
+
+  // Voice availability is engine-aware: Sarvam needs MediaRecorder support,
+  // the browser engine needs Web Speech support. Both are High-tier only.
   const voiceFullySupported = voiceInput.supported && voiceSpeech.supported;
   const isHighTier          = AI_PROVIDERS.find((p) => p.id === model)?.supportsHindi ?? false;
-  const voiceAvailable      = voiceFullySupported && isHighTier;
+  const engineSupported     = voiceEngine === "sarvam"
+    ? voiceRecorder.supported
+    : voiceFullySupported;
+  const voiceAvailable      = engineSupported && isHighTier;
+
+  // Unified TTS entry point: Sarvam primary, browser synthesis fallback.
+  const speakReply = useCallback((text: string) => {
+    if (!text.trim()) return;
+    if (voiceEngine === "sarvam") {
+      void sarvamTts.speak(text, language === "hi" ? "hi-IN" : "en-IN").then((ok) => {
+        if (!ok) voiceSpeech.speak(text); // Sarvam failed — browser fallback
+      });
+    } else {
+      voiceSpeech.speak(text);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceEngine, language, sarvamTts, voiceSpeech]);
+
+  // Stop every voice activity (used on mode switch / submit / emergency)
+  const stopAllVoice = useCallback(() => {
+    voiceInput.stopListening();
+    voiceRecorder.stopRecording();
+    voiceSpeech.stop();
+    sarvamTts.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceInput, voiceRecorder, voiceSpeech, sarvamTts]);
+
+  // TTS state derived from the active engine
+  const ttsBusy    = voiceEngine === "sarvam"
+    ? sarvamTts.state === "playing" || sarvamTts.state === "generating"
+    : voiceSpeech.speaking;
+  const ttsPlaying = voiceEngine === "sarvam"
+    ? sarvamTts.state === "playing"
+    : voiceSpeech.speaking;
+  const lastAssistantReply = [...conversation].reverse().find((m) => m.role === "assistant")?.content ?? null;
 
   // ── Load patient profile ──────────────────────────────────────────────────
   useEffect(() => {
@@ -428,7 +632,7 @@ export default function AIAgentPage() {
     const last = conversation[conversation.length - 1];
     // Don't speak system messages (fallback notices)
     if (last.role === "assistant" && !aiLoading) {
-      voiceSpeech.speak(last.content);
+      speakReply(last.content);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation, aiLoading, inputMode]);
@@ -436,17 +640,15 @@ export default function AIAgentPage() {
   // ── Emergency: stop mic + speak warning ──────────────────────────────────
   useEffect(() => {
     if (emergency) {
-      voiceInput.stopListening();
-      voiceSpeech.stop();
-      voiceSpeech.speak(emergency);
+      stopAllVoice();
+      speakReply(emergency);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [emergency]);
 
   // ── Mode switch ───────────────────────────────────────────────────────────
   const handleModeSwitch = (m: InputMode) => {
-    voiceInput.stopListening();
-    voiceSpeech.stop();
+    stopAllVoice();
     voiceInput.resetTranscript();
     setInputMode(m);
   };
@@ -475,6 +677,10 @@ export default function AIAgentPage() {
     addMessage(userMsg);
     setTextInput("");
     voiceInput.resetTranscript();
+    // Never record while the AI is about to reply/play audio
+    voiceRecorder.stopRecording();
+    voiceSpeech.stop();
+    sarvamTts.stop();
     setAiLoading(true);
     setApiError(null);
 
@@ -545,7 +751,7 @@ export default function AIAgentPage() {
     addMessage, setData, setFallbackOccurred, setRecommendedDepartment,
     setRecommendedDepartmentReason, setAlternateDepartment,
     setSuggestedInvestigations, setInvestigationsDisclaimer,
-    voiceInput, voiceSpeech,
+    voiceInput, voiceSpeech, voiceRecorder, sarvamTts,
   ]);
 
   // ── Kick off first AI question ────────────────────────────────────────────
@@ -692,7 +898,7 @@ export default function AIAgentPage() {
             <ModeToggle
               mode={inputMode}
               onToggle={handleModeSwitch}
-              voiceSupported={voiceFullySupported}
+              voiceSupported={engineSupported}
               tierIsHigh={isHighTier}
             />
             {isHighTier && inputMode === "voice" && (
@@ -829,18 +1035,31 @@ export default function AIAgentPage() {
               </div>
             ) : (
               <VoicePanel
-                listening={voiceInput.listening}
-                speaking={voiceSpeech.speaking}
+                engine={voiceEngine}
+                onEngineChange={(e) => { stopAllVoice(); setVoiceEngine(e); }}
+                sttLanguage={sttLangChoice}
+                onSttLanguageChange={setSttLangChoice}
+                browserListening={voiceInput.listening}
+                onStartBrowserListening={voiceInput.startListening}
+                onStopBrowserListening={voiceInput.stopListening}
+                recording={voiceRecorder.recording}
+                processing={voiceRecorder.processing}
+                onStartRecording={voiceRecorder.startRecording}
+                onStopRecording={voiceRecorder.stopRecording}
+                browserSpeaking={voiceSpeech.speaking}
+                ttsState={sarvamTts.state}
+                onStopSpeaking={voiceSpeech.stop}
+                onPlayReply={() => lastAssistantReply && speakReply(lastAssistantReply)}
+                onStopReply={sarvamTts.stop}
                 transcript={voiceInput.transcript}
                 interim={voiceInput.interim}
-                inputError={voiceInput.error}
-                onStartListening={voiceInput.startListening}
-                onStopListening={voiceInput.stopListening}
-                onStopSpeaking={voiceSpeech.stop}
+                inputError={voiceRecorder.error ?? sttError ?? voiceInput.error}
                 onSubmit={sendMessage}
                 onTranscriptChange={voiceInput.setTranscript}
                 disabled={aiLoading || !!emergency}
                 language={language}
+                lastReply={lastAssistantReply}
+                ttsBusy={ttsBusy}
               />
             )}
             {inputMode === "voice" && apiError && (

@@ -238,6 +238,10 @@ Required variables:
 | `GEMINI_API_KEY` | https://aistudio.google.com/app/apikey — for Google Gemini provider |
 | `GEMINI_MODEL` | `gemini-2.0-flash` (default, can override) |
 | `GROQ_API_KEY` | https://console.groq.com/keys — for Groq provider (fallback) |
+| `SARVAM_API_KEY` | https://dashboard.sarvam.ai — voice layer (Speech-to-Text + Text-to-Speech), server-side only |
+| `SARVAM_STT_MODEL` | Optional. Default `saaras:v3` |
+| `SARVAM_TTS_MODEL` | Optional. Default `bulbul:v3` |
+| `SARVAM_TTS_SPEAKER` | Optional. Default `shubh` |
 | `RESEND_API_KEY` | https://resend.com/api-keys |
 | `RESEND_FROM_EMAIL` | Optional. Defaults to `NoQueue Health <onboarding@resend.dev>` |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your Vercel URL in prod |
