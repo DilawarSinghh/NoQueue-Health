@@ -22,6 +22,9 @@ ALTER TABLE intake_records
 -- Backfill existing rows as 'low' (all were Groq before this migration)
 UPDATE intake_records SET tier = 'low' WHERE tier IS NULL;
 
+-- Enforce NOT NULL after backfill — every row must have a tier
+ALTER TABLE intake_records ALTER COLUMN tier SET NOT NULL;
+
 -- ── 2. fallback_occurred column ───────────────────────────────────────────────
 ALTER TABLE intake_records
   ADD COLUMN IF NOT EXISTS fallback_occurred boolean NOT NULL DEFAULT false;

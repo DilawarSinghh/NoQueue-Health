@@ -1,7 +1,7 @@
 import Groq from "groq-sdk";
 
 // groq.ts — thin Groq client factory. SERVER-ONLY.
-// The full system prompt and model list now live in app/api/ai-intake/route.ts.
+// The full system prompt and model list live in lib/intakePrompt.ts (shared by both tiers).
 
 let _client: Groq | null = null;
 

@@ -53,7 +53,6 @@ function RecordCard({ record }: { record: IntakeRecord }) {
   const [expanded,   setExpanded]   = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError,   setPdfError]   = useState<string | null>(null);
-  const [pdfUrl,     setPdfUrl]     = useState<string | null>(null);
 
   const chiefComplaint =
     record.structured_data?.chiefComplaint ?? "No complaint recorded";
@@ -66,22 +65,17 @@ function RecordCard({ record }: { record: IntakeRecord }) {
   const fellBack = !!record.fallback_occurred;
 
   const fetchSignedUrl = async () => {
-    if (pdfUrl) {
-      window.open(pdfUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
     if (!record.pdf_url) { setPdfError("No PDF available for this record."); return; }
     setPdfLoading(true);
     setPdfError(null);
     try {
       const supabase = createClient();
+      // Always generate a fresh signed URL — never cache, since it expires after 1 hour
       const { data, error } = await supabase.storage
         .from("patient-pdfs")
         .createSignedUrl(record.pdf_url, 3600); // 1-hour signed URL
       if (error) throw error;
-      const url = data.signedUrl;
-      setPdfUrl(url);
-      window.open(url, "_blank", "noopener,noreferrer");
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
     } catch (e: unknown) {
       setPdfError(e instanceof Error ? e.message : "Failed to load PDF.");
     } finally {
