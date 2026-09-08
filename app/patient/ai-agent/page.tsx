@@ -499,8 +499,9 @@ export default function AIAgentPage() {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          conversationHistory:   [...conversation, userMsg],
-          patientContext,
+          // Filter out system messages (fallback notices) — API only accepts user/assistant roles
+          conversationHistory:   [...conversation, userMsg].filter((m) => m.role === "user" || m.role === "assistant"),
+          patientContext:        patientContext ?? { name: "Patient", age: null, gender: null, allergies: null, chronicConditions: null },
           currentStructuredData: data,
           language:              tier === "high" ? language : "en",
         }),
@@ -580,7 +581,7 @@ export default function AIAgentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationHistory:   [{ role: "user", content: "Hello, I'd like to start my intake." }],
-          patientContext,
+          patientContext:        patientContext ?? { name: "Patient", age: null, gender: null, allergies: null, chronicConditions: null },
           currentStructuredData: {},
           language:              tier === "high" ? language : "en",
         }),
