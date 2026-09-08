@@ -223,7 +223,7 @@ Required variables:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase project settings |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project settings — **never expose to client** |
 | `GROQ_API_KEY` | https://console.groq.com/keys |
-| `KIMI_API_KEY` | https://platform.kimi.ai — optional; High tier auto-falls-back to Groq if absent |
+| `CLINE_API_KEY` | Cline API key from app.cline.bot — optional; High tier auto-falls-back to Groq if absent |
 | `RESEND_API_KEY` | https://resend.com/api-keys |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your Vercel URL in prod |
 | `DOCTOR_REPORT_EMAIL` | Email address that receives intake PDFs |

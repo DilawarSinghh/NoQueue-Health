@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type OpenAI from "openai";
-import { getKimiClient, KIMI_MODEL, KIMI_REASONING_EFFORT } from "@/lib/kimi";
+import { getKimiClient, KIMI_MODEL } from "@/lib/kimi";
 import {
   buildSystemPrompt,
   buildDataReminder,
@@ -16,17 +16,12 @@ async function callKimi(
 ): Promise<string | null> {
   const kimi = getKimiClient();
 
-  // reasoning_effort is a Moonshot extension — cast through unknown to avoid
-  // TS strictness on the standard OpenAI type that doesn't declare it.
-  const res = await (kimi.chat.completions.create as (
-    params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming & { reasoning_effort?: string }
-  ) => Promise<OpenAI.Chat.ChatCompletion>)({
-    model:            KIMI_MODEL,
+  const res = await kimi.chat.completions.create({
+    model:           KIMI_MODEL,
     messages,
-    temperature:      0.3,
-    max_tokens:       1024,          // Kimi K3 produces slightly more verbose output
-    response_format:  { type: "json_object" },
-    reasoning_effort: KIMI_REASONING_EFFORT,
+    temperature:     0.3,
+    max_tokens:      1024,          // Kimi K3 produces slightly more verbose output
+    response_format: { type: "json_object" },
   });
 
   return res.choices[0]?.message?.content ?? null;
@@ -34,9 +29,9 @@ async function callKimi(
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 async function runHighTier(body: IntakeRequest): Promise<NextResponse> {
-  if (!process.env.KIMI_API_KEY) {
+  if (!process.env.CLINE_API_KEY) {
     // No key configured — fall back immediately with a clear notice
-    console.warn("[ai-intake/high] KIMI_API_KEY not set — falling back to Low tier");
+    console.warn("[ai-intake/high] CLINE_API_KEY not set — falling back to Low tier");
     const fallbackRes  = await runLowTier(body);
     const fallbackJson = (await fallbackRes.json()) as Record<string, unknown>;
     const fallbackAlsoFailed = "error" in fallbackJson;
